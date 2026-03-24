@@ -5,7 +5,7 @@ AI agent framework that runs two adversarial teams against your web application 
 - **QA Team** — tests features from your list + free-form play testers that explore like real users
 - **Red Team** — performs reconnaissance on your source code and attempts security exploits
 
-Both teams have read-only access to your repo source code so they can attach file/line references to every report. Reports are written as Markdown files designed to be pasted directly into a coding LLM for fixing.
+Both teams have read-only access to your repo source code so they can attach file/line references to every report. Reports are written as Markdown files designed to be pasted directly into a coding LLM for fixing, and QA / Red Team findings are now gated behind an in-team reviewer approval step before they are written to disk.
 
 ---
 
@@ -91,6 +91,37 @@ Stop with **Ctrl+C** — agents shut down gracefully and a summary is printed.
 
 ---
 
+## Web UI
+
+A live Slack-style interface starts automatically at **`http://localhost:4242`** when you run the framework. Ctrl+click the link printed in the terminal to open it.
+
+### What you'll see
+
+| Section | What it shows |
+|---|---|
+| **# qa / # red-team / # devops** | Real-time channel messages between agents on each team, including threaded draft-review conversations |
+| **⚡ system** | Watchdog alerts (site down/up/give-up events) |
+| **# reports** | Every filed report as a card — click to read the full markdown |
+| **Direct Messages** | Per-agent action log (everything that agent thinks and does) |
+
+### Features
+
+- Each agent gets a fun **adjective-animal name** (e.g. `sneaky-axolotl`, `frantic-quokka`) with a unique color and emoji avatar — assigned randomly at startup
+- Agents can post **inline screenshots** to their team channel so you can see what they're looking at
+- URLs to the site under test auto-unfurl into **link preview cards** with title and description
+- **Unread badges** on sidebar items while you're viewing another channel
+- Auto-reconnects if the page is refreshed or connection drops
+
+### Configuration
+
+```yaml
+web:
+  enabled: true   # set to false to disable entirely
+  port: 4242       # change if the port is in use
+```
+
+---
+
 ## How it works
 
 ### Startup sequence
@@ -120,6 +151,9 @@ Stop with **Ctrl+C** — agents shut down gracefully and a summary is printed.
 ### Communication rules
 
 - Agents communicate **within their team** via a shared channel
+- QA and Red Team findings are first posted as **draft review requests**
+- The team coordinator acts as the reviewer and must mark a finding **ready** before it becomes a filed report
+- Reviewer feedback appears as a **thread under the draft message** in the live UI so the discussion stays local to that report
 - QA and Red Team **cannot directly message each other** — they can only interact through the website itself (e.g., Red Team may exploit accounts that QA play testers created)
 
 ### Server crash handling
@@ -135,7 +169,7 @@ If the target server crashes during a test run:
 
 ## Reports
 
-Reports are written to `reports/` — one Markdown file per finding:
+Reports are written to `reports/` — one Markdown file per approved finding:
 
 ```
 reports/
@@ -199,6 +233,13 @@ src/
 │   ├── channel.ts              Team message channels
 │   ├── reporter.ts             Report file writer
 │   └── repo-reader.ts          Read-only repo access
+├── web/
+│   ├── identity.ts             Bot name/emoji/color generator
+│   ├── web-bridge.ts           Event hub connecting channels to WebSocket
+│   ├── web-server.ts           Express + WebSocket server
+│   ├── reporter-bridge.ts      Reporter subclass that notifies the web UI
+│   └── public/
+│       └── index.html          Slack-style SPA (no build step)
 └── agents/
     ├── base-agent.ts           Abstract base (all agents extend this)
     ├── base-coordinator.ts     Abstract coordinator

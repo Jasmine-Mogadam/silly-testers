@@ -123,7 +123,9 @@ export class RepoReader {
     const typeFlag = ext ? `--glob "*.${ext.replace(/^\./, '')}"` : '';
     const cmd = `rg --line-number --no-heading --color=never ${typeFlag} ${JSON.stringify(pattern)} ${JSON.stringify(this.repoPath)}`;
 
-    const output = execSync(cmd, { encoding: 'utf8', timeout: 15_000 });
+    // Pipe stderr so "rg: command not found" doesn't bleed into the runner output.
+    // The catch in searchCode() will transparently fall back to the JS implementation.
+    const output = execSync(cmd, { encoding: 'utf8', timeout: 15_000, stdio: ['pipe', 'pipe', 'pipe'] });
     return this.parseRipgrepOutput(output);
   }
 

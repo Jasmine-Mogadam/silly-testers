@@ -26,6 +26,8 @@ export class RedCoordinator extends BaseCoordinator {
   private exploitCount: number;
   private browserPool: BrowserPool;
   private workerCounter = 0;
+  private reviewedMessages = new Set<string>();
+  private filedFindingIds = new Set<string>();
 
   constructor(deps: RedCoordinatorDeps) {
     super(deps);
@@ -61,7 +63,8 @@ export class RedCoordinator extends BaseCoordinator {
       await this.checkPaused();
       if (this.isStopped()) break;
 
-      await sleep(45_000);
+      await this.reviewPendingDrafts();
+      await sleep(10_000);
 
       if (!this.isStopped()) {
         await this.reviewAndDirectAttack();
@@ -95,6 +98,81 @@ Keep it to one sentence.`;
 
     const directive = await this.askLLM(prompt);
     this.broadcastDirective(directive);
+  }
+
+  private async reviewPendingDrafts(): Promise<void> {
+    const drafts = this.teamChannel.getHistory()
+      .filter((msg) => msg.review?.status === 'draft' && msg.finding && msg.tags?.includes('review-request'))
+      .filter((msg) => !this.reviewedMessages.has(msg.id));
+
+    for (const draft of drafts) {
+      this.reviewedMessages.add(draft.id);
+      const finding = draft.finding!;
+      const thread = this.getThreadMessages(draft.threadId ?? draft.review!.findingId);
+      const prompt = `You are the Red Team report reviewer.
+
+Approve only if the vulnerability is clearly confirmed.
+Reject for revision if:
+- evidence is ambiguous or explicitly says the attack failed
+- the summary claims code execution / compromise without proof
+- the suggested fix does not match the actual issue
+- the report confuses a hypothesis with a confirmed exploit
+
+Draft report:
+Title: ${finding.title}
+Type: ${finding.type}
+Severity: ${finding.severity}
+URL: ${finding.url}
+Summary: ${finding.summary}
+Steps:
+${finding.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}
+Evidence:
+${finding.evidence ?? '(none)'}
+
+Thread so far:
+${thread.map((msg) => `[${msg.from}] ${msg.content}`).join('\n')}
+
+Respond in exactly this format:
+DECISION: APPROVE | REVISE
+FEEDBACK: <one concise sentence>`;
+
+      const response = await this.askLLM(prompt);
+      const approved = /DECISION:\s*APPROVE/i.test(response);
+      const feedbackMatch = response.match(/FEEDBACK:\s*(.+)/i);
+      const feedback = feedbackMatch?.[1]?.trim() || (approved
+        ? 'Confirmed exploit evidence is sufficient.'
+        : 'Do not file this until the evidence proves the exploit succeeded.');
+
+      if (!approved) {
+        this.postReviewReply(
+          draft.threadId ?? draft.review!.findingId,
+          draft.id,
+          'needs_revision',
+          `Reviewer feedback requested by Red Team: ${feedback}`,
+          feedback,
+        );
+        continue;
+      }
+
+      this.postReviewReply(
+        draft.threadId ?? draft.review!.findingId,
+        draft.id,
+        'approved',
+        `Red Team reviewer marked this report ready: ${finding.type} "${finding.title}".`,
+        feedback,
+      );
+
+      if (this.filedFindingIds.has(draft.review!.findingId)) continue;
+      this.filedFindingIds.add(draft.review!.findingId);
+      const filePath = this.report(finding, { announce: false });
+      this.postReviewReply(
+        draft.threadId ?? draft.review!.findingId,
+        draft.id,
+        'filed',
+        `Approved report filed to disk: ${filePath.split('/').pop() ?? filePath}.`,
+        'Filed after Red Team reviewer approval.',
+      );
+    }
   }
 
   private async spawnReconAgent(): Promise<void> {

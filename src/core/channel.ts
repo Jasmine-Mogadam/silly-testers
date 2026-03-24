@@ -20,13 +20,21 @@ export class TeamChannel extends EventEmitter {
     this.setMaxListeners(50);
   }
 
-  post(from: string, content: string, tags?: string[]): ChannelMessage {
+  post(
+    from: string,
+    content: string,
+    tags?: string[],
+    image?: string,
+    extras?: Partial<Pick<ChannelMessage, 'threadId' | 'replyTo' | 'finding' | 'review'>>
+  ): ChannelMessage {
     const message: ChannelMessage = {
       id: randomUUID(),
       from,
       content,
       timestamp: Date.now(),
       tags,
+      image,
+      ...extras,
     };
 
     this.history.push(message);

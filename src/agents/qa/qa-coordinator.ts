@@ -32,6 +32,8 @@ export class QACoordinator extends BaseCoordinator {
   private goalIntervalMs: number;
   private browserPool: BrowserPool;
   private workerCounter = 0;
+  private reviewedMessages = new Set<string>();
+  private filedFindingIds = new Set<string>();
 
   constructor(deps: QACoordinatorDeps) {
     super(deps);
@@ -72,7 +74,8 @@ export class QACoordinator extends BaseCoordinator {
       await this.checkPaused();
       if (this.isStopped()) break;
 
-      await sleep(30_000);
+      await this.reviewPendingDrafts();
+      await sleep(10_000);
 
       if (!this.isStopped()) {
         await this.reviewAndAdapt();
@@ -103,6 +106,81 @@ Based on these findings, write ONE directive for the team (what to focus on, wha
 
     const directive = await this.askLLM(prompt);
     this.broadcastDirective(directive);
+  }
+
+  private async reviewPendingDrafts(): Promise<void> {
+    const drafts = this.teamChannel.getHistory()
+      .filter((msg) => msg.review?.status === 'draft' && msg.finding && msg.tags?.includes('review-request'))
+      .filter((msg) => !this.reviewedMessages.has(msg.id));
+
+    for (const draft of drafts) {
+      this.reviewedMessages.add(draft.id);
+      const finding = draft.finding!;
+      const thread = this.getThreadMessages(draft.threadId ?? draft.review!.findingId);
+      const prompt = `You are the QA report reviewer.
+
+Review this draft bug/UX report for correctness and focus.
+Approve only if:
+- the report stays tightly scoped to the observed issue
+- the summary matches the evidence
+- the steps are clear and relevant
+- the report does not drift into unrelated feature notes or speculation
+
+Draft report:
+Title: ${finding.title}
+Type: ${finding.type}
+Severity: ${finding.severity}
+URL: ${finding.url}
+Summary: ${finding.summary}
+Steps:
+${finding.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}
+Evidence:
+${finding.evidence ?? '(none)'}
+
+Thread so far:
+${thread.map((msg) => `[${msg.from}] ${msg.content}`).join('\n')}
+
+Respond in exactly this format:
+DECISION: APPROVE | REVISE
+FEEDBACK: <one concise sentence>`;
+
+      const response = await this.askLLM(prompt);
+      const approved = /DECISION:\s*APPROVE/i.test(response);
+      const feedbackMatch = response.match(/FEEDBACK:\s*(.+)/i);
+      const feedback = feedbackMatch?.[1]?.trim() || (approved
+        ? 'Report is ready to go.'
+        : 'Tighten the report so it only describes the confirmed issue and supporting evidence.');
+
+      if (!approved) {
+        this.postReviewReply(
+          draft.threadId ?? draft.review!.findingId,
+          draft.id,
+          'needs_revision',
+          `Reviewer feedback requested by QA: ${feedback}`,
+          feedback,
+        );
+        continue;
+      }
+
+      this.postReviewReply(
+        draft.threadId ?? draft.review!.findingId,
+        draft.id,
+        'approved',
+        `QA reviewer marked this report ready: ${finding.type} "${finding.title}".`,
+        feedback,
+      );
+
+      if (this.filedFindingIds.has(draft.review!.findingId)) continue;
+      this.filedFindingIds.add(draft.review!.findingId);
+      const filePath = this.report(finding, { announce: false });
+      this.postReviewReply(
+        draft.threadId ?? draft.review!.findingId,
+        draft.id,
+        'filed',
+        `Approved report filed to disk: ${filePath.split('/').pop() ?? filePath}.`,
+        'Filed after QA reviewer approval.',
+      );
+    }
   }
 
   private async spawnFeatureTester(features: string[]): Promise<void> {

@@ -141,7 +141,7 @@ Respond with ONE action only.`;
       if (parts.length >= 3) {
         const severity = this.parseSeverity(parts[1].trim());
         const codeRefs = await this.findCodeRefs(parts[2].trim());
-        this.report({
+        await this.submitFindingForReview({
           title: parts[0].trim(),
           type: ReportType.UX,
           severity,
@@ -152,7 +152,11 @@ Respond with ONE action only.`;
           evidence: pageContent.slice(0, 500),
           codeRefs,
           suggestedFix: `Review the UX flow for goal: "${this.currentGoal}"`,
-        });
+        }, async (currentFinding, feedback) => ({
+          ...currentFinding,
+          summary: `${currentFinding.summary}\n\nReviewer requested: ${feedback}`,
+          evidence: `${currentFinding.evidence ?? ''}\n\nReviewer requested stronger proof: ${feedback}`.trim(),
+        }));
       }
 
     } else if (action.startsWith('GOAL_DONE:') || action.startsWith('GOAL_ABANDON:')) {

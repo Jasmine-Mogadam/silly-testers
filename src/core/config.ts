@@ -37,6 +37,10 @@ const DEFAULTS: Config = {
     serverStartTimeoutMs: 60_000,
     startupRetries: 10,
   },
+  web: {
+    enabled: true,
+    port: 4242,
+  },
 };
 
 function deepMerge<T>(base: T, override: Partial<T>): T {

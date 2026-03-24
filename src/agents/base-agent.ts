@@ -1,16 +1,20 @@
 import type { BrowserContext, Page } from 'playwright';
+import { randomUUID } from 'crypto';
 import type { OllamaClient } from '../core/llm';
 import type { TeamChannel, SystemChannel } from '../core/channel';
 import type { Reporter } from '../core/reporter';
 import type { RepoReader } from '../core/repo-reader';
 import type {
+  ChannelMessage,
   Finding,
+  FindingReviewStatus,
   SiteMap,
   SystemMessage,
   Team,
   AgentStatus,
 } from '../core/types';
 import { SystemEvent } from '../core/types';
+import { WebBridge } from '../web/web-bridge';
 
 export interface AgentDeps {
   id: string;
@@ -151,11 +155,133 @@ export abstract class BaseAgent {
 
   // ─── Reporting ───────────────────────────────────────────────────────────────
 
-  protected report(finding: Finding): string {
+  protected report(finding: Finding, options?: { announce?: boolean }): string {
     const filePath = this.reporter.write(finding);
     this.log(`Filed report: ${filePath}`);
-    this.sendToTeam(`Filed report: ${finding.type} — ${finding.title} (${finding.severity})`, ['report']);
+    if (options?.announce !== false) {
+      this.sendToTeam(`Filed report: ${finding.type} — ${finding.title} (${finding.severity})`, ['report']);
+    }
     return filePath;
+  }
+
+  protected submitFindingDraft(
+    finding: Finding,
+    options?: { threadId?: string; replyTo?: string; note?: string; tags?: string[] }
+  ): ChannelMessage {
+    const findingId = options?.threadId ?? randomUUID();
+    const content = options?.note
+      ?? `Requesting reviewer feedback for ${finding.type} "${finding.title}" (${finding.severity}).`;
+
+    return this.teamChannel.post(
+      this.id,
+      content,
+      options?.tags ?? ['review-request'],
+      undefined,
+      {
+        threadId: findingId,
+        replyTo: options?.replyTo,
+        finding,
+        review: {
+          findingId,
+          status: 'draft',
+        },
+      }
+    );
+  }
+
+  protected postReviewReply(
+    threadId: string,
+    replyTo: string,
+    status: FindingReviewStatus,
+    message: string,
+    feedback?: string,
+  ): ChannelMessage {
+    return this.teamChannel.post(
+      this.id,
+      message,
+      [status === 'approved' ? 'review-approved' : status === 'filed' ? 'report' : 'review-feedback'],
+      undefined,
+      {
+        threadId,
+        replyTo,
+        review: {
+          findingId: threadId,
+          status,
+          reviewerId: this.id,
+          feedback,
+        },
+      }
+    );
+  }
+
+  protected getThreadMessages(threadId: string): ChannelMessage[] {
+    return this.teamChannel
+      .getHistory()
+      .filter((msg) => msg.threadId === threadId)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  protected async waitForReviewDecision(
+    threadId: string,
+    afterTimestamp: number,
+    timeoutMs = 20_000,
+  ): Promise<ChannelMessage | null> {
+    const startedAt = Date.now();
+
+    while (!this.isStopped() && Date.now() - startedAt < timeoutMs) {
+      await this.checkPaused();
+      const decision = this.teamChannel
+        .getHistory()
+        .find((msg) =>
+          msg.threadId === threadId
+          && msg.timestamp > afterTimestamp
+          && !!msg.review
+          && ['approved', 'needs_revision', 'filed'].includes(msg.review.status)
+        );
+
+      if (decision) return decision;
+      await sleep(1_000);
+    }
+
+    return null;
+  }
+
+  protected async submitFindingForReview(
+    finding: Finding,
+    revisePrompt: (currentFinding: Finding, feedback: string) => Promise<Finding>,
+  ): Promise<void> {
+    const threadId = randomUUID();
+    let currentFinding = finding;
+    let replyTo: string | undefined;
+
+    for (let attempt = 0; attempt < 3 && !this.isStopped(); attempt++) {
+      const draftMessage = this.submitFindingDraft(currentFinding, {
+        threadId,
+        replyTo,
+        note: attempt === 0
+          ? `Requesting reviewer feedback for ${finding.type} "${currentFinding.title}" (${currentFinding.severity}).`
+          : `Updated draft for reviewer feedback: ${finding.type} "${currentFinding.title}" (${currentFinding.severity}).`,
+        tags: attempt === 0 ? ['review-request'] : ['review-request', 'revision'],
+      });
+
+      const decision = await this.waitForReviewDecision(threadId, draftMessage.timestamp);
+      if (!decision?.review) {
+        this.log(`No review decision received for draft ${threadId}; leaving as pending.`);
+        return;
+      }
+
+      if (decision.review.status === 'approved' || decision.review.status === 'filed') {
+        this.log(`Draft ${threadId} approved by ${decision.review.reviewerId ?? 'reviewer'}.`);
+        return;
+      }
+
+      if (decision.review.status !== 'needs_revision') return;
+
+      const feedback = decision.review.feedback?.trim() || decision.content.trim();
+      this.log(`Draft ${threadId} needs revision: ${feedback}`);
+      currentFinding = await revisePrompt(currentFinding, feedback);
+      replyTo = decision.id;
+    }
   }
 
   // ─── Pause / Resume (watchdog integration) ──────────────────────────────────
@@ -232,8 +358,17 @@ export abstract class BaseAgent {
     }
   }
 
+  protected sendImageToTeam(imageBase64: string, caption: string, tags?: string[]): void {
+    this.teamChannel.post(this.id, caption, tags, imageBase64);
+  }
+
   protected log(message: string): void {
     const prefix = `[${new Date().toISOString().slice(11, 19)}][${this.team}/${this.id}]`;
     console.log(`${prefix} ${message}`);
+    WebBridge.getInstanceIfExists()?.agentLog(this.id, message);
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

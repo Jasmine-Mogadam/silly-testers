@@ -54,15 +54,16 @@ function readDocFiles(reader: RepoReader): string {
  */
 export async function discoverTargetConfig(
   repoPath: string,
-  llm: OllamaClient
+  llm: OllamaClient,
+  onLog?: (msg: string) => void
 ): Promise<DiscoveredTarget> {
   const reader = new RepoReader(repoPath);
-  const log = (msg: string) => console.log(`[devops/discover] ${msg}`);
+  const log = (msg: string) => { console.log(`[devops/discover] ${msg}`); onLog?.(msg); };
 
   log('Setting up environment and analyzing repository...');
 
   // Step 1: set up .env and other config files BEFORE we try to start anything
-  await setupEnvironment(repoPath, llm, reader);
+  await setupEnvironment(repoPath, llm, reader, onLog);
 
   log('Determining start command and HTTP server URL...');
 
@@ -163,7 +164,7 @@ URL: http://localhost:<port>`;
   const cmdMatch = response.match(/START_COMMAND:\s*(.+)/);
   const urlMatch = response.match(/URL:\s*(https?:\/\/[^\s]+)/);
 
-  const startCommand = cmdMatch?.[1]?.trim() ?? 'npm run dev';
+  const startCommand = sanitizeStartCommand(cmdMatch?.[1], log);
   // Strip trailing slash and validate it's not a DB port
   let url = urlMatch?.[1]?.trim().replace(/\/$/, '') ?? 'http://localhost:3000';
   url = sanitizeHttpUrl(url);
@@ -172,6 +173,35 @@ URL: http://localhost:<port>`;
   log(`URL: ${url}`);
 
   return { startCommand, url };
+}
+
+/**
+ * Clean up the LLM-extracted start command.
+ * The LLM sometimes wraps output in markdown bold/code, or returns prose instead
+ * of a real command. Strip formatting and validate it looks like a shell command.
+ */
+function sanitizeStartCommand(raw: string | undefined, log: (msg: string) => void): string {
+  const FALLBACK = 'npm run dev';
+  if (!raw) return FALLBACK;
+
+  // Strip markdown bold (**cmd**), italic (*cmd*), and inline code (`cmd`)
+  let cmd = raw.trim()
+    .replace(/^\*+|\*+$/g, '')
+    .replace(/^`+|`+$/g, '')
+    .trim();
+
+  // If the LLM included a trailing explanation after the command (e.g. "npm run dev # starts server")
+  // keep only the part before any comment
+  cmd = cmd.split('#')[0].trim();
+
+  // Must start with a known package manager / runtime / make / relative path
+  const VALID_START = /^(npm|yarn|pnpm|npx|node|bun|python|python3|ruby|bundle|cargo|go|make|mvn|gradle|php|deno|\.\/|bash|sh)\b/;
+  if (!VALID_START.test(cmd)) {
+    log(`LLM returned unexpected start command "${cmd}" — falling back to ${FALLBACK}`);
+    return FALLBACK;
+  }
+
+  return cmd;
 }
 
 /** Reject DB ports and other non-HTTP URLs, falling back to :3000 */
@@ -199,10 +229,11 @@ function sanitizeHttpUrl(url: string): string {
 export async function setupEnvironment(
   repoPath: string,
   llm: OllamaClient,
-  reader?: RepoReader
+  reader?: RepoReader,
+  onLog?: (msg: string) => void
 ): Promise<void> {
   const r = reader ?? new RepoReader(repoPath);
-  const log = (msg: string) => console.log(`[devops/env] ${msg}`);
+  const log = (msg: string) => { console.log(`[devops/env] ${msg}`); onLog?.(msg); };
 
   // 1. Handle .env files
   await setupEnvFile(repoPath, r, llm, log);
@@ -285,18 +316,20 @@ ${docs ? `\nProject documentation (use this to infer correct values):\n${docs}\n
 This is the .env template for the project:
 ${templateContent}
 
-Fill in appropriate VALUES for local development. Rules:
-- DATABASE_URL: use postgresql://postgres:postgres@localhost:5432/dev (or mysql://root:@localhost:3306/dev for MySQL)
+${ENV_FORMAT_RULES}
+
+Value defaults for local development:
+- DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dev (or mysql://root:@localhost:3306/dev for MySQL)
 - SECRET_KEY / JWT_SECRET / APP_SECRET: generate a random 32-char alphanumeric string
 - NODE_ENV / APP_ENV: development
 - PORT: keep existing value or use 3000
-- API_URL / BACKEND_URL: use http://localhost:3000 (adjust port if you can infer it)
+- API_URL / BACKEND_URL: http://localhost:3000 (adjust port if you can infer it)
 - REDIS_URL: redis://localhost:6379
 - Keep comments from the template
 - For any other variable, provide a sensible development placeholder
 - NEVER use production values
 
-Return the complete .env file content with all variables filled in. No explanation — just the file content.`;
+Return the complete .env file content with all variables filled in.`;
 
   const filled = await llm.complete(prompt);
 
@@ -308,6 +341,47 @@ Return the complete .env file content with all variables filled in. No explanati
   fs.mkdirSync(path.dirname(envPath), { recursive: true });
   fs.writeFileSync(envPath, header + content + '\n', 'utf8');
   log(`Created ${path.relative(repoPath, envPath)} ✓`);
+}
+
+// ─── Format Rules ─────────────────────────────────────────────────────────────
+
+/**
+ * Explicit formatting rules injected into every .env prompt.
+ * LLMs frequently make all of these mistakes without being reminded.
+ */
+const ENV_FORMAT_RULES = `
+CRITICAL .env formatting rules — violating any of these will break the app:
+- Every line must be exactly KEY=value with NO spaces around the = sign
+- Keys must be UPPER_SNAKE_CASE with NO spaces (e.g. MY_VAR, not "My Var" or MY VAR)
+- Do NOT wrap keys or values in backticks, quotes, or markdown formatting
+  BAD:  \`VITE_API_URL\`=http://localhost:3000
+  BAD:  VITE_API_URL="http://localhost:3000" (only use quotes if value contains spaces)
+  GOOD: VITE_API_URL=http://localhost:3000
+- Do NOT include any explanatory text, preamble, or prose — only KEY=value lines and # comments
+- Do NOT wrap the output in markdown code fences (\`\`\`env ... \`\`\`)
+- Blank lines and lines starting with # are fine
+- Values containing spaces MUST be quoted: GREETING="Hello World"
+- Boolean values should be unquoted lowercase: FEATURE_FLAG=true
+`.trim();
+
+/**
+ * Format rules for non-env config files, tailored by file extension.
+ */
+function configFormatRules(ext: string): string {
+  switch (ext) {
+    case '.json':
+      return 'Return valid JSON only. No comments, no trailing commas, no markdown fences.';
+    case '.yaml':
+    case '.yml':
+      return 'Return valid YAML only. Use 2-space indentation. No markdown fences. No tabs.';
+    case '.toml':
+      return 'Return valid TOML only. No markdown fences.';
+    case '.ini':
+    case '.conf':
+      return 'Return a valid INI/conf file. Use KEY=value or KEY = value format per section. No markdown fences.';
+    default:
+      return 'Return only the file content. No explanation, no markdown fences.';
+  }
 }
 
 /**
@@ -387,7 +461,9 @@ ${missingLines.join('\n')}
 Repository structure:
 ${repoStructure}
 
-Return ONLY the filled variable lines (KEY=value format), one per line. No comments, no explanation.`;
+${ENV_FORMAT_RULES}
+
+Return ONLY the filled variable lines, one KEY=value per line. No comments, no explanation.`;
 
   const filled = await llm.complete(prompt);
   const raw = filled.replace(/^```[^\n]*\n?/gm, '').replace(/^```\s*$/gm, '').trim();
@@ -410,7 +486,9 @@ async function inferEnvRequirements(reader: RepoReader, llm: OllamaClient): Prom
 
 ${refs}
 ${docs ? `\nProject documentation (use this to infer correct values):\n${docs}\n` : ''}
-Return ONLY the .env file content in KEY=value format. Fill in sensible development defaults.`;
+${ENV_FORMAT_RULES}
+
+Return ONLY the .env file content. Fill in sensible development defaults.`;
 
   return llm.complete(prompt);
 }
@@ -460,7 +538,7 @@ File: ${target}
 Content:
 ${templateContent.slice(0, 2000)}
 
-Return ONLY the filled file content. No explanation.`;
+${configFormatRules(ext)}`;
 
       const filled = await llm.complete(prompt);
       const content = filled.replace(/^```[^\n]*\n?/gm, '').replace(/^```\s*$/gm, '').trim();
@@ -528,11 +606,16 @@ export class DevOpsAgent extends BaseAgent {
 
     const repoStructure = this.repoReader.getStructure(3);
 
-    // Read current .env if it exists (may have been written in a prior attempt)
+    // Determine every directory that needs a .env — root plus wherever the server
+    // process actually ran from (monorepos run from a subdirectory like packages/server).
+    const envTargetDirs = this.resolveEnvDirs(serverOutput);
+    this.log(`Env target dirs: ${envTargetDirs.join(', ')}`);
+
+    // Root .env is always the primary one for reading current state
+    const rootEnvPath = path.join(this.repoPath, '.env');
     let currentEnv = '';
-    const envPath = path.join(this.repoPath, '.env');
-    if (fs.existsSync(envPath)) {
-      try { currentEnv = fs.readFileSync(envPath, 'utf8'); } catch { /* ignore */ }
+    if (fs.existsSync(rootEnvPath)) {
+      try { currentEnv = fs.readFileSync(rootEnvPath, 'utf8'); } catch { /* ignore */ }
     }
 
     if (isFinal) {
@@ -545,12 +628,17 @@ export class DevOpsAgent extends BaseAgent {
     // Invalid .env key (space in key name or prose line) — always re-sanitize and rewrite
     const spaceKeyMatch = serverOutput.match(/line (\d+): key cannot contain a space/);
     if (spaceKeyMatch) {
-      if (fs.existsSync(envPath)) {
-        const fixed = sanitizeEnvContent(currentEnv);
-        fs.writeFileSync(envPath, fixed, 'utf8');
-        this.log('Fixed .env: sanitized key names ✓');
-        return { fixApplied: true };
+      let fixed = false;
+      for (const dir of envTargetDirs) {
+        const ep = path.join(dir, '.env');
+        if (fs.existsSync(ep)) {
+          const raw = fs.readFileSync(ep, 'utf8');
+          fs.writeFileSync(ep, sanitizeEnvContent(raw), 'utf8');
+          this.log(`Fixed .env: sanitized key names in ${ep} ✓`);
+          fixed = true;
+        }
       }
+      if (fixed) return { fixApplied: true };
     }
 
     // Missing env var (Prisma, dotenv, etc.)
@@ -559,11 +647,23 @@ export class DevOpsAgent extends BaseAgent {
       ?? serverOutput.match(/process\.env\.(\w+) is (undefined|not set)/i);
     if (missingVarMatch) {
       const varName = missingVarMatch[1];
-      this.log(`Detected missing env var: ${varName}`);
       const placeholder = defaultEnvValue(varName);
       const entry = `\n# Added by silly-testers (missing var detected)\n${varName}=${placeholder}\n`;
-      fs.appendFileSync(envPath, entry, 'utf8');
-      this.log(`Added ${varName} to .env ✓`);
+      // Write to every target dir so monorepo subdirectories also get the value
+      for (const dir of envTargetDirs) {
+        const ep = path.join(dir, '.env');
+        fs.mkdirSync(dir, { recursive: true });
+        // Skip if this dir already has the var set to a non-empty value
+        if (fs.existsSync(ep)) {
+          const existing = fs.readFileSync(ep, 'utf8');
+          if (new RegExp(`^${varName}=.+`, 'm').test(existing)) {
+            this.log(`${varName} already set in ${ep} — skipping`);
+            continue;
+          }
+        }
+        fs.appendFileSync(ep, entry, 'utf8');
+        this.log(`Added ${varName} to ${ep} ✓`);
+      }
       return { fixApplied: true };
     }
 
@@ -588,7 +688,7 @@ export class DevOpsAgent extends BaseAgent {
         const updated = portRegex.test(currentEnv)
           ? currentEnv.replace(portRegex, `PORT=${newPort}`)
           : currentEnv + `\nPORT=${newPort}\n`;
-        fs.writeFileSync(envPath, updated, 'utf8');
+        fs.writeFileSync(rootEnvPath, updated, 'utf8');
         return { fixApplied: true };
       }
     }
@@ -641,10 +741,10 @@ Respond with EXACTLY one of the above formats. No preamble.`;
     const response = await this.askLLM(prompt);
     this.log(`LLM fix suggestion:\n${response.slice(0, 200)}`);
 
-    return this.applyFix(response);
+    return this.applyFix(response, envTargetDirs);
   }
 
-  private applyFix(response: string): { fixApplied: boolean } {
+  private applyFix(response: string, envTargetDirs: string[] = [this.repoPath]): { fixApplied: boolean } {
     const lines = response.trim().split('\n');
     const directive = lines[0].trim();
 
@@ -656,25 +756,28 @@ Respond with EXACTLY one of the above formats. No preamble.`;
 
         if (varLines.length === 0) return { fixApplied: false };
 
-        const envPath = path.join(this.repoPath, '.env');
-        let existing = '';
-        if (fs.existsSync(envPath)) {
-          existing = fs.readFileSync(envPath, 'utf8');
-        }
-
-        // Update existing keys or append new ones
-        let updated = existing;
-        for (const line of varLines) {
-          const key = line.split('=')[0].trim();
-          const keyRegex = new RegExp(`^${key}=.*$`, 'm');
-          if (keyRegex.test(updated)) {
-            updated = updated.replace(keyRegex, line.trim());
-          } else {
-            updated += (updated.endsWith('\n') ? '' : '\n') + line.trim() + '\n';
+        // Apply to every target dir (root + server subdirectory in monorepos)
+        for (const dir of envTargetDirs) {
+          const envPath = path.join(dir, '.env');
+          let existing = '';
+          if (fs.existsSync(envPath)) {
+            existing = fs.readFileSync(envPath, 'utf8');
           }
+
+          let updated = existing;
+          for (const line of varLines) {
+            const key = line.split('=')[0].trim();
+            const keyRegex = new RegExp(`^${key}=.*$`, 'm');
+            if (keyRegex.test(updated)) {
+              updated = updated.replace(keyRegex, line.trim());
+            } else {
+              updated += (updated.endsWith('\n') ? '' : '\n') + line.trim() + '\n';
+            }
+          }
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(envPath, updated, 'utf8');
+          this.log(`Applied FIX_ENV to ${envPath}: ${varLines.map(l => l.split('=')[0]).join(', ')}`);
         }
-        fs.writeFileSync(envPath, updated, 'utf8');
-        this.log(`Applied FIX_ENV: ${varLines.map(l => l.split('=')[0]).join(', ')}`);
         return { fixApplied: true };
 
       } else if (directive === 'FIX_RUN_COMMAND') {
@@ -1039,6 +1142,43 @@ ${repoStructure}
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Returns the set of directories that need a .env written/updated.
+   *
+   * In monorepos the server process runs from a subdirectory (e.g. packages/server)
+   * while the working copy root is the repo root. We extract both from the server
+   * output so env vars are written to every relevant location.
+   *
+   * Yarn prints:   "Directory: /abs/path/to/packages/server"
+   * npm prints:    nothing useful, but we fall back to the repo root
+   */
+  private resolveEnvDirs(serverOutput: string): string[] {
+    const dirs = new Set<string>([this.repoPath]);
+
+    // "Directory: <abs path>" lines in yarn/npm output
+    for (const match of serverOutput.matchAll(/^Directory:\s*(.+)$/gm)) {
+      const dir = match[1].trim();
+      // Must be inside the working copy (sanity check)
+      if (dir.startsWith(this.repoPath) && dir !== this.repoPath) {
+        dirs.add(dir);
+      }
+    }
+
+    // Also add any subdirectory that contains a prisma/schema.prisma,
+    // since Prisma always loads .env relative to its own working dir.
+    try {
+      const prismaSchemas = this.repoReader.searchCode('provider\\s*=').map(r => r.file)
+        .filter(f => f.includes('prisma/schema.prisma') || f.endsWith('schema.prisma'));
+      for (const schema of prismaSchemas) {
+        // schema is relative to repoPath; resolve the package dir (parent of "prisma/")
+        const abs = path.resolve(this.repoPath, path.dirname(schema), '..');
+        if (abs.startsWith(this.repoPath)) dirs.add(abs);
+      }
+    } catch { /* ignore */ }
+
+    return [...dirs];
+  }
 
   private parseUrl(url: string): { hostname: string; port: string; protocol: string; origin: string } {
     try {

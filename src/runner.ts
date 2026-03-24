@@ -7,12 +7,14 @@ import { Team, SystemEvent } from './core/types';
 import { BrowserPool } from './core/browser';
 import { OllamaClient } from './core/llm';
 import { getTeamChannel, SystemChannel, resetChannels } from './core/channel';
-import { Reporter } from './core/reporter';
 import { RepoReader } from './core/repo-reader';
 import { Watchdog } from './watchdog';
 import { DevOpsAgent, discoverTargetConfig } from './agents/devops-agent';
 import { QACoordinator } from './agents/qa/qa-coordinator';
 import { RedCoordinator } from './agents/red-team/red-coordinator';
+import { WebBridge } from './web/web-bridge';
+import { WebServer } from './web/web-server';
+import { ReporterBridge } from './web/reporter-bridge';
 import type { SiteMap, WatchdogConfig, DiscoveredTarget } from './core/types';
 
 export interface RunnerOptions {
@@ -33,6 +35,7 @@ export class Runner {
   private qaCoordinator: QACoordinator | null = null;
   private redCoordinator: RedCoordinator | null = null;
   private systemChannel = SystemChannel.getInstance();
+  private webServer: WebServer | null = null;
 
   constructor(config: Config, options: RunnerOptions) {
     this.config = config;
@@ -45,7 +48,25 @@ export class Runner {
 
     console.log('[runner] Initializing silly-testers...');
 
-    // 1. Check Ollama connectivity
+    // 1. Eagerly create all team channels so the bridge captures everything,
+    //    including early DevOps messages before QA/Red are spawned.
+    const devopsChannel = getTeamChannel(Team.DEVOPS);
+    const qaChannel = getTeamChannel(Team.QA);
+    const redChannel = getTeamChannel(Team.RED);
+
+    // 2. Start web UI (if enabled)
+    if (config.web.enabled) {
+      const bridge = WebBridge.init();
+      bridge.attach(devopsChannel, qaChannel, redChannel, this.systemChannel);
+      this.webServer = new WebServer(bridge);
+      const publicDir = path.resolve(__dirname, 'web/public');
+      const webUrl = await this.webServer.start(config.web.port, publicDir);
+      // OSC 8 hyperlink — ctrl+clickable in VSCode terminal, iTerm2, Warp, etc.
+      const link = `\x1b]8;;${webUrl}\x1b\\${webUrl}\x1b]8;;\x1b\\`;
+      console.log(`[runner] Web UI ready → ${link}`);
+    }
+
+    // 3. Check Ollama connectivity
     const llm = new OllamaClient(config.ollama);
     const ollamaHealth = await llm.healthCheck();
     if (!ollamaHealth.ok) {
@@ -55,6 +76,9 @@ export class Runner {
       console.warn(`[runner] Warning: Missing Ollama models: ${ollamaHealth.missing.join(', ')}`);
       console.warn('[runner] Run: ollama pull ' + ollamaHealth.missing.join(' && ollama pull '));
     }
+
+    // Give the bridge access to the LLM so it can summarize long agent logs
+    WebBridge.getInstanceIfExists()?.setLlm(llm);
 
     // 2. Create a working copy of the repo — the original is NEVER modified
     console.log('[runner] Creating working copy of repository...');
@@ -66,16 +90,19 @@ export class Runner {
 
     // 3. DevOps static discovery — runs against the working copy so it can write .env etc.
     console.log('[runner] DevOps agent analyzing repository...');
-    this.discovered = await discoverTargetConfig(this.workingDir, llm);
+    this.discovered = await discoverTargetConfig(
+      this.workingDir,
+      llm,
+      (msg) => WebBridge.getInstanceIfExists()?.agentLog('devops-0', msg),
+    );
 
     // 4. Init browser pool (no sitemap yet — sandbox will be set after configure())
     this.browserPool = new BrowserPool(config.browser);
     await this.browserPool.init();
 
     // 5. Start server with DevOps-assisted retry loop
-    const reporter = new Reporter(this.resolveReportDir());
+    const reporter = new ReporterBridge(this.resolveReportDir());
     const devopsSiteMap: SiteMap = { allowedOrigins: [this.discovered.url], routes: [], entryUrl: this.discovered.url };
-    const devopsChannel = getTeamChannel(Team.DEVOPS);
     const { page: devopsPage, context: devopsContext } = await this.browserPool.acquirePage();
 
     const devopsAgent = new DevOpsAgent({
@@ -99,6 +126,9 @@ export class Runner {
     // 6. DevOps browser-based configure (server is confirmed up at this point)
     const { watchdogConfig, siteMap } = await devopsAgent.configure();
     await this.browserPool.releasePage(devopsContext);
+
+    // Update allowed preview origins now that we know the real site map
+    WebBridge.getInstanceIfExists()?.allowedPreviewOrigins.push(...siteMap.allowedOrigins);
 
     if (this.options.dryRun) {
       console.log('[runner] Dry run complete. Config looks good.');
@@ -235,7 +265,7 @@ export class Runner {
     watchdogConfig: WatchdogConfig,
     siteMap: SiteMap,
     llm: OllamaClient,
-    reporter: Reporter,
+    reporter: ReporterBridge,
     repoReader: RepoReader
   ): void {
     this.watchdog!.onUnhealthy((status) => {
@@ -298,7 +328,7 @@ export class Runner {
 
   private async spawnQA(
     llm: OllamaClient,
-    reporter: Reporter,
+    reporter: ReporterBridge,
     repoReader: RepoReader,
     siteMap: SiteMap
   ): Promise<QACoordinator> {
@@ -329,7 +359,7 @@ export class Runner {
 
   private async spawnRed(
     llm: OllamaClient,
-    reporter: Reporter,
+    reporter: ReporterBridge,
     repoReader: RepoReader,
     siteMap: SiteMap
   ): Promise<RedCoordinator> {
@@ -388,6 +418,8 @@ export class Runner {
     await this.browserPool?.close().catch(() => {});
 
     this.killServer();
+    this.webServer?.stop();
+    WebBridge.reset();
 
     if (this.workingDir) {
       try {

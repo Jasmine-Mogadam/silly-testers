@@ -60,3 +60,10 @@ runner:
   # How many times the DevOps agent will attempt to fix a failing startup before giving up
   # On the final attempt a report is written to reports/devops/ instead of another fix attempt
   startupRetries: 10
+
+web:
+  # Set to false to disable the live web UI entirely
+  enabled: true
+
+  # Port for the web UI — open http://localhost:4242 while agents are running
+  port: 4242

@@ -30,6 +30,11 @@ export enum AgentStatus {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+export interface WebConfig {
+  enabled: boolean;
+  port: number;
+}
+
 export interface Config {
   target: TargetConfig;
   ollama: OllamaConfig;
@@ -37,6 +42,7 @@ export interface Config {
   browser: BrowserConfig;
   reports: ReportConfig;
   runner: RunnerConfig;
+  web: WebConfig;
 }
 
 export interface TargetConfig {
@@ -135,6 +141,21 @@ export interface ChannelMessage {
   content: string;
   timestamp: number;
   tags?: string[];
+  /** Base64-encoded PNG screenshot (no data: URI prefix) */
+  image?: string;
+  threadId?: string;
+  replyTo?: string;
+  finding?: Finding;
+  review?: FindingReviewState;
+}
+
+export type FindingReviewStatus = 'draft' | 'needs_revision' | 'approved' | 'filed';
+
+export interface FindingReviewState {
+  findingId: string;
+  status: FindingReviewStatus;
+  reviewerId?: string;
+  feedback?: string;
 }
 
 export enum SystemEvent {

@@ -152,7 +152,7 @@ Respond with one action per line.`;
           const codeRefs = await this.findCodeRefs(description);
           const pageContent = await this.readPage();
 
-          this.report({
+          await this.submitFindingForReview({
             title,
             type: ReportType.Bug,
             severity,
@@ -163,6 +163,14 @@ Respond with one action per line.`;
             evidence: pageContent.slice(0, 500),
             codeRefs,
             suggestedFix: await this.suggestFix(description, codeRefs),
+          }, async (currentFinding, feedback) => {
+            const revised = await this.reviseFinding(currentFinding, feedback);
+            return {
+              ...currentFinding,
+              ...revised,
+              type: currentFinding.type,
+              team: currentFinding.team,
+            };
           });
         }
 
@@ -209,6 +217,60 @@ Respond with one action per line.`;
     );
   }
 
+  private async reviseFinding(currentFinding: {
+    title: string;
+    severity: Severity;
+    summary: string;
+    steps: string[];
+    evidence?: string;
+    suggestedFix?: string;
+  }, feedback: string): Promise<Partial<typeof currentFinding>> {
+    const prompt = `You are revising a QA bug report draft based on reviewer feedback.
+
+Current draft:
+Title: ${currentFinding.title}
+Severity: ${currentFinding.severity}
+Summary: ${currentFinding.summary}
+Steps:
+${currentFinding.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}
+Evidence:
+${currentFinding.evidence ?? '(none)'}
+Suggested fix:
+${currentFinding.suggestedFix ?? '(none)'}
+
+Reviewer feedback:
+${feedback}
+
+Return valid JSON with:
+{
+  "title": string,
+  "severity": "Critical" | "High" | "Medium" | "Low" | "Info",
+  "summary": string,
+  "steps": string[],
+  "evidence": string,
+  "suggestedFix": string
+}
+
+Keep the report tightly scoped to the actual bug.`;
+
+    try {
+      const response = await this.askLLM(prompt);
+      const parsed = JSON.parse(extractJsonObject(response));
+      return {
+        title: typeof parsed.title === 'string' ? parsed.title : currentFinding.title,
+        severity: this.parseSeverity(String(parsed.severity ?? currentFinding.severity)),
+        summary: typeof parsed.summary === 'string' ? parsed.summary : currentFinding.summary,
+        steps: Array.isArray(parsed.steps) ? parsed.steps.map(String) : currentFinding.steps,
+        evidence: typeof parsed.evidence === 'string' ? parsed.evidence : currentFinding.evidence,
+        suggestedFix: typeof parsed.suggestedFix === 'string' ? parsed.suggestedFix : currentFinding.suggestedFix,
+      };
+    } catch {
+      return {
+        summary: `${currentFinding.summary}\n\nReviewer feedback addressed: ${feedback}`,
+      };
+    }
+  }
+
   private parseSeverity(s: string): Severity {
     const map: Record<string, Severity> = {
       critical: Severity.Critical,
@@ -219,6 +281,12 @@ Respond with one action per line.`;
     };
     return map[s.toLowerCase()] ?? Severity.Medium;
   }
+}
+
+function extractJsonObject(text: string): string {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON object found');
+  return match[0];
 }
 
 function sleep(ms: number): Promise<void> {
