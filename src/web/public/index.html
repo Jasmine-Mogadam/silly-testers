@@ -59,6 +59,8 @@
   #channel-header { padding: 8px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
   #channel-header .ch-icon { font-size: 16px; }
   #channel-header .ch-name { font-size: 15px; font-weight: 700; color: var(--text-bright); }
+  #channel-header .ch-name.clickable { cursor: pointer; }
+  #channel-header .ch-name.clickable:hover { text-decoration: underline; }
   #channel-header .ch-desc { font-size: 12px; color: var(--text-muted); margin-left: 6px; }
 
   /* ── Channel messages (compact bubbles) ── */
@@ -180,6 +182,142 @@
   .team-red { background: rgba(237,66,69,0.2); color: var(--red); }
   .team-devops { background: rgba(88,101,242,0.2); color: #7289da; }
 
+  /* ── Metrics ─────────────────────────────────────────────────────────────── */
+  #metrics-view { flex: 1; overflow-y: auto; padding: 18px; display: none; }
+  #metrics-view::-webkit-scrollbar { width: 5px; }
+  #metrics-view::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+  .metrics-board { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .metric-card {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at top right, rgba(255,255,255,0.08), transparent 38%),
+      linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 16px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 10px 28px rgba(0,0,0,0.22);
+    min-height: 150px;
+  }
+  .metric-card::after {
+    content: '';
+    position: absolute;
+    inset: auto -8% -45% auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.08), transparent 68%);
+    pointer-events: none;
+  }
+  .metric-span-3 { grid-column: span 3; }
+  .metric-span-4 { grid-column: span 4; }
+  .metric-span-5 { grid-column: span 5; }
+  .metric-span-6 { grid-column: span 6; }
+  .metric-span-7 { grid-column: span 7; }
+  .metric-span-8 { grid-column: span 8; }
+  .metric-span-12 { grid-column: span 12; }
+  .metric-tall { min-height: 230px; }
+  .metric-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .metric-kicker { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(255,255,255,0.52); }
+  .metric-title { font-size: 18px; font-weight: 800; line-height: 1.05; color: var(--text-bright); margin-top: 4px; }
+  .metric-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.45; max-width: 38ch; }
+  .metric-stat { font-size: 32px; font-weight: 800; line-height: 1; color: var(--text-bright); }
+  .metric-stat-label { font-size: 11px; color: var(--text-muted); text-align: right; }
+  .metric-dual { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+  .metric-chip {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .metric-chip strong { display: block; font-size: 17px; color: var(--text-bright); }
+  .metric-chip span { font-size: 11px; color: var(--text-muted); }
+  .metric-chart { position: relative; margin-top: 8px; }
+  .metric-chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .metric-tooltip {
+    position: fixed;
+    z-index: 500;
+    pointer-events: none;
+    display: none;
+    transform: translate(-50%, calc(-100% - 12px));
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(7,8,11,0.96);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-bright);
+    font-size: 11px;
+    line-height: 1.35;
+    white-space: nowrap;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.42);
+  }
+  .metric-tooltip.open { display: block; }
+  .metric-spark-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .metric-grid-line { stroke: rgba(255,255,255,0.08); stroke-width: 1; }
+  .metric-dot { stroke: #0d1117; stroke-width: 2; cursor: pointer; }
+  .metric-bar { cursor: pointer; transition: opacity 0.12s ease, transform 0.12s ease; transform-origin: center bottom; }
+  .metric-bar:hover { opacity: 0.92; transform: scaleY(1.03); }
+  .metric-label-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .metric-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+  .metric-legend i { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+  .metric-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+  .metric-list-row { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+  .metric-list-row strong { color: var(--text-bright); font-size: 13px; }
+  .metric-track { position: relative; height: 10px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,0.06); }
+  .metric-track-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; }
+  .metric-list-row span { font-size: 11px; color: var(--text-muted); }
+  .donut-wrap { display: grid; place-items: center; min-height: 190px; }
+  .donut-center {
+    position: absolute;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .donut-center strong { font-size: 24px; color: var(--text-bright); }
+  .donut-center span { font-size: 11px; color: var(--text-muted); }
+  .metrics-mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+  .metrics-mini {
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .metrics-mini strong { display: block; font-size: 18px; color: var(--text-bright); }
+  .metrics-mini span { font-size: 11px; color: var(--text-muted); }
+  .timeline-wrap { position: relative; padding-top: 8px; }
+  .timeline-labels { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 11px; color: var(--text-muted); }
+  .event-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .event-item {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .event-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .event-dot { width: 10px; height: 10px; border-radius: 999px; margin-top: 5px; }
+  .event-time { font-size: 11px; color: var(--text-muted); min-width: 62px; }
+  .event-copy strong { display: block; font-size: 13px; color: var(--text-bright); }
+  .event-copy span { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+  .metric-empty { display: flex; align-items: center; justify-content: center; min-height: 120px; color: var(--text-muted); font-size: 12px; text-align: center; border: 1px dashed rgba(255,255,255,0.08); border-radius: 14px; background: rgba(255,255,255,0.02); }
+  .name-crown { margin-left: 4px; font-size: 0.9em; color: var(--yellow); vertical-align: text-top; }
+
+  @media (max-width: 1100px) {
+    .metrics-board { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .metric-span-7, .metric-span-8 { grid-column: span 6; }
+    .metric-span-6 { grid-column: span 6; }
+    .metric-span-5, .metric-span-4, .metric-span-3 { grid-column: span 3; }
+  }
+  @media (max-width: 760px) {
+    .metrics-board { grid-template-columns: 1fr; }
+    .metric-span-3, .metric-span-4, .metric-span-5, .metric-span-6, .metric-span-7, .metric-span-8, .metric-span-12 { grid-column: span 1; }
+    .metric-dual, .metrics-mini-grid { grid-template-columns: 1fr; }
+  }
+
   /* ── Report detail ── */
   #report-detail { position: fixed; top: 0; right: -700px; width: 680px; max-width: 100vw; height: 100vh; background: var(--input-bg); border-left: 1px solid var(--border); z-index: 100; transition: right 0.25s ease; display: flex; flex-direction: column; }
   #report-detail.open { right: 0; }
@@ -290,6 +428,9 @@
       <div class="sidebar-item" data-view="reports" onclick="selectView(this)">
         <span class="item-icon">📋</span><span class="item-name">reports</span><span class="badge" id="badge-reports" style="display:none"></span>
       </div>
+      <div class="sidebar-item" data-view="metrics" onclick="selectView(this)">
+        <span class="item-icon">📈</span><span class="item-name">metrics</span>
+      </div>
     </div>
     <div class="sidebar-section">
       <div class="sidebar-section-label">Direct Messages</div>
@@ -306,6 +447,7 @@
     <div id="messages"></div>
     <div id="dm-view" style="display:none"></div>
     <div id="reports-view" style="display:none"><div class="reports-grid" id="reports-grid"></div></div>
+    <div id="metrics-view"></div>
   </main>
 </div>
 
@@ -379,6 +521,7 @@
 <div id="lightbox" onclick="closeLightbox()">
   <img id="lb-img" src="" alt="">
 </div>
+<div id="metric-tooltip" class="metric-tooltip"></div>
 
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
@@ -527,7 +670,8 @@ function renderCurrentView() {
   const msgs   = document.getElementById('messages');
   const dmView = document.getElementById('dm-view');
   const rView  = document.getElementById('reports-view');
-  msgs.style.display = dmView.style.display = rView.style.display = 'none';
+  const mView  = document.getElementById('metrics-view');
+  msgs.style.display = dmView.style.display = rView.style.display = mView.style.display = 'none';
 
   if (state.activeView === 'channel') {
     msgs.style.display = 'flex';
@@ -548,25 +692,46 @@ function renderCurrentView() {
     rView.style.display = 'block';
     renderReportsGrid();
     updateReportsHeader();
+  } else if (state.activeView === 'metrics') {
+    mView.style.display = 'block';
+    renderMetricsView();
+    updateMetricsHeader();
   }
 }
 
 function updateChannelHeader() {
   const descs = { qa:'QA team communication', red:'Red team communication', devops:'DevOps agent logs', system:'System events & watchdog alerts' };
+  const nameEl = document.getElementById('ch-name');
+  nameEl.classList.remove('clickable');
+  nameEl.onclick = null;
   document.getElementById('ch-icon').textContent = state.activeChannel === 'system' ? '⚡' : '#';
-  document.getElementById('ch-name').textContent = state.activeChannel === 'red' ? 'red-team' : state.activeChannel;
+  nameEl.textContent = state.activeChannel === 'red' ? 'red-team' : state.activeChannel;
   document.getElementById('ch-desc').textContent = descs[state.activeChannel] || '';
 }
 function updateDmHeader() {
   const a = state.agents[state.activeDm] || {};
   document.getElementById('ch-icon').textContent = a.emoji || '🤖';
-  document.getElementById('ch-name').textContent = a.displayName || state.activeDm;
+  const nameEl = document.getElementById('ch-name');
+  nameEl.innerHTML = renderAgentName(a.displayName || state.activeDm, state.activeDm);
+  nameEl.classList.add('clickable');
+  nameEl.onclick = (event) => showProfile(state.activeDm, event);
   document.getElementById('ch-desc').textContent = state.activeDm;
 }
 function updateReportsHeader() {
+  const nameEl = document.getElementById('ch-name');
+  nameEl.classList.remove('clickable');
+  nameEl.onclick = null;
   document.getElementById('ch-icon').textContent = '📋';
   document.getElementById('ch-name').textContent = 'reports';
   document.getElementById('ch-desc').textContent = `${state.reports.length} report${state.reports.length !== 1 ? 's' : ''} filed`;
+}
+function updateMetricsHeader() {
+  const nameEl = document.getElementById('ch-name');
+  nameEl.classList.remove('clickable');
+  nameEl.onclick = null;
+  document.getElementById('ch-icon').textContent = '📈';
+  document.getElementById('ch-name').textContent = 'metrics';
+  document.getElementById('ch-desc').textContent = 'Live trends, ratios, and run telemetry';
 }
 
 // ── Channel message (bubble) ──────────────────────────────────────────────────
@@ -614,7 +779,7 @@ function appendChannelMessage(channel, msg, threadReplies = []) {
     <div class="msg-avatar" style="background:${agent.color}" onclick="showProfile('${safe}',event)" title="${escHtml(agent.displayName)}">${escHtml(agent.emoji)}</div>
     <div class="msg-body">
       <div class="msg-meta">
-        <span class="msg-name" style="color:${agent.color}" onclick="showProfile('${safe}',event)">${escHtml(agent.displayName)}</span>
+        <span class="msg-name" style="color:${agent.color}" onclick="showProfile('${safe}',event)">${renderAgentName(agent.displayName, msg.from)}</span>
         <span class="msg-time">${formatTime(msg.timestamp)}</span>
       </div>
       <div class="msg-bubble" style="background:color-mix(in srgb,${agent.color} 8%,#1e2024);border-left-color:${agent.color}">
@@ -780,12 +945,18 @@ function renderDmList() {
     const item = document.createElement('div');
     item.className = 'sidebar-item' + (state.activeView === 'dm' && state.activeDm === agent.agentId ? ' active' : '');
     item.dataset.agent = agent.agentId;
-    item.onclick = () => openDm(agent.agentId);
+    item.onclick = (event) => {
+      if (state.activeView === 'dm' && state.activeDm === agent.agentId) {
+        showProfile(agent.agentId, event);
+        return;
+      }
+      openDm(agent.agentId);
+    };
     const badge = state.unread['dm:' + agent.agentId];
     const teamBadge = renderTeamBadge(agentTeam(agent.agentId), 'dm-team-badge');
     item.innerHTML = `
       <div class="avatar-sm" style="background:${agent.color}">${escHtml(agent.emoji)}</div>
-      <span class="dm-name-row"><span class="item-name" title="${escHtml(agent.agentId)}">${escHtml(agent.displayName)}</span>${teamBadge}</span>
+      <span class="dm-name-row"><span class="item-name" title="${escHtml(agent.agentId)}">${renderAgentName(agent.displayName, agent.agentId)}</span>${teamBadge}</span>
       ${badge ? `<span class="badge">${badge}</span>` : ''}`;
     list.appendChild(item);
   });
@@ -798,6 +969,7 @@ function selectView(el) {
   const view = el.dataset.view, ch = el.dataset.channel;
   if (view === 'channel') { state.activeView = 'channel'; state.activeChannel = ch; clearUnread(ch); }
   else if (view === 'reports') { state.activeView = 'reports'; clearUnread('reports'); }
+  else if (view === 'metrics') { state.activeView = 'metrics'; }
   renderCurrentView();
 }
 
@@ -975,7 +1147,7 @@ function showProfile(agentId, event) {
   document.getElementById('pp-avatar').style.background = agent.color;
   document.getElementById('pp-emoji').textContent        = agent.emoji;
   document.getElementById('pp-status-ring').style.background = ringColor;
-  document.getElementById('pp-name').textContent         = agent.displayName;
+  document.getElementById('pp-name').innerHTML           = renderAgentName(agent.displayName, agentId);
   document.getElementById('pp-agentid').textContent      = agentId;
   const teamEl = document.getElementById('pp-team');
   teamEl.textContent = team; teamEl.style.background = tbg; teamEl.style.color = tfg;
@@ -1178,6 +1350,681 @@ function renderTokenGraph(agentId) {
   });
 }
 
+function isCoordinatorId(agentId) {
+  return ['qa-coordinator', 'red-coordinator', 'devops-0'].includes(agentId);
+}
+
+function renderAgentName(name, agentId) {
+  const safeName = escHtml(name || agentId || 'unknown');
+  return isCoordinatorId(agentId) ? `${safeName}<span class="name-crown" title="Team coordinator">♛</span>` : safeName;
+}
+
+function renderMetricsView() {
+  const container = document.getElementById('metrics-view');
+  const metrics = deriveMetrics();
+  const reportChart = renderCumulativeReportChart(metrics.reportBuckets, metrics.timeline);
+  const compareChart = renderCompareBars([
+    { label: 'Features tested', value: metrics.qa.featuresTested, color: 'var(--green)' },
+    { label: 'Issues found', value: metrics.qa.issuesFound, color: 'var(--yellow)' },
+    { label: 'Exploits tried', value: metrics.red.exploitsTried, color: 'var(--red)' },
+    { label: 'Exploits found', value: metrics.red.exploitsFound, color: '#ff9b9d' },
+  ], 'Exact counts for completed QA and red-team passes.');
+  const tokenChart = renderTokenTimeline(metrics.tokenBuckets);
+  const reviewDonut = renderReviewDonut(metrics.reviewStatus);
+  const timelineChart = renderEventTimeline(metrics.timeline, metrics.events);
+
+  container.innerHTML = `
+    <div class="metrics-board">
+      <section class="metric-card metric-span-8 metric-tall">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Reports</div>
+            <div class="metric-title">Report flow over time</div>
+            <div class="metric-sub">A live cumulative curve of filed reports, so we can see when the run started producing signal.</div>
+          </div>
+          <div>
+            <div class="metric-stat">${metrics.totalReports}</div>
+            <div class="metric-stat-label">total reports</div>
+          </div>
+        </div>
+        ${reportChart}
+      </section>
+
+      <section class="metric-card metric-span-4">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Velocity</div>
+            <div class="metric-title">Avg time to report</div>
+            <div class="metric-sub">Estimated from each team's last investigation kickoff before a filed report.</div>
+          </div>
+          <div>
+            <div class="metric-stat">${formatDuration(metrics.avgReportLeadMs)}</div>
+            <div class="metric-stat-label">cross-team average</div>
+          </div>
+        </div>
+        <div class="metric-dual">
+          ${renderMetricChip('QA', formatDuration(metrics.avgLeadByTeam.qa), `${metrics.qa.issuesFound} issues filed`)}
+          ${renderMetricChip('Red Team', formatDuration(metrics.avgLeadByTeam.red), `${metrics.red.exploitsFound} exploit reports`)}
+          ${renderMetricChip('DevOps', formatDuration(metrics.avgLeadByTeam.devops), `${metrics.devopsReports} ops reports`)}
+          ${renderMetricChip('Fastest', formatDuration(metrics.fastestLeadMs), metrics.fastestLeadLabel)}
+        </div>
+      </section>
+
+      <section class="metric-card metric-span-5">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Coverage</div>
+            <div class="metric-title">Tested vs found</div>
+            <div class="metric-sub">QA feature coverage and red-team exploit conversion side by side.</div>
+          </div>
+        </div>
+        ${compareChart}
+      </section>
+
+      <section class="metric-card metric-span-3">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Reliability</div>
+            <div class="metric-title">Run pulse</div>
+            <div class="metric-sub">A few compact indicators that help explain how noisy or healthy the run has been.</div>
+          </div>
+        </div>
+        <div class="metrics-mini-grid">
+          ${renderMiniMetric('Uptime', `${metrics.uptimePercent}%`, `${metrics.systemUpCount} recoveries / ${metrics.systemDownCount} drops`)}
+          ${renderMiniMetric('Drafts', `${metrics.reviewStatus.total}`, `${metrics.reviewStatus.rejected} rejected, ${metrics.reviewStatus.unrejected} unrejected`)}
+          ${renderMiniMetric('Token Load', formatCompact(metrics.totalTokens), `${formatCompact(metrics.tokensByTeam.qa)} QA / ${formatCompact(metrics.tokensByTeam.red)} Red / ${formatCompact(metrics.tokensByTeam.devops)} DevOps`)}
+          ${renderMiniMetric('Major Events', `${metrics.events.length}`, metrics.events[0] ? `${metrics.events[0].label}` : 'No major events yet')}
+        </div>
+      </section>
+
+      <section class="metric-card metric-span-4 metric-tall">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Review Funnel</div>
+            <div class="metric-title">Rejected vs unrejected</div>
+            <div class="metric-sub">Outer ring shows draft volume by team. Inner ring splits that volume into rejected and unrejected outcomes.</div>
+          </div>
+        </div>
+        ${reviewDonut}
+      </section>
+
+      <section class="metric-card metric-span-8 metric-tall">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Tokens</div>
+            <div class="metric-title">Model usage over time</div>
+            <div class="metric-sub">Approximate token flow by team and in total, derived from channel and DM activity.</div>
+          </div>
+          <div>
+            <div class="metric-stat">${formatCompact(metrics.totalTokens)}</div>
+            <div class="metric-stat-label">estimated total tokens</div>
+          </div>
+        </div>
+        ${tokenChart}
+      </section>
+
+      <section class="metric-card metric-span-5">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Severity</div>
+            <div class="metric-title">Severity skyline</div>
+            <div class="metric-sub">Which severities dominated the run, and how far each team pushed them.</div>
+          </div>
+        </div>
+        ${renderSeverityList(metrics.severityBreakdown)}
+      </section>
+
+      <section class="metric-card metric-span-7 metric-tall">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Timeline</div>
+            <div class="metric-title">Major events</div>
+            <div class="metric-sub">The underlying band shows server state. Markers show site drops, recoveries, give-ups, and reports.</div>
+          </div>
+        </div>
+        ${timelineChart}
+        <div class="event-list">${renderEventList(metrics.events)}</div>
+      </section>
+
+      <section class="metric-card metric-span-12">
+        <div class="metric-head">
+          <div>
+            <div class="metric-kicker">Crew</div>
+            <div class="metric-title">Most active agents</div>
+            <div class="metric-sub">A quick read on who generated the most observable work across DMs and team channels.</div>
+          </div>
+        </div>
+        ${renderTopAgents(metrics.topAgents)}
+      </section>
+    </div>`;
+
+  bindMetricTooltips(container);
+}
+
+function deriveMetrics() {
+  const teamColors = { qa: 'var(--green)', red: 'var(--red)', devops: '#7289da' };
+  const channelEvents = [];
+  const tokenEvents = [];
+  const activityByAgent = new Map();
+  const featureStarts = new Map();
+  const exploitStarts = [];
+  const teamActivityStarts = { qa: [], red: [], devops: [] };
+
+  ['qa', 'red', 'devops'].forEach(team => {
+    (state.channels[team] || []).forEach(msg => {
+      channelEvents.push({ timestamp: msg.timestamp, type: 'channel', team, msg });
+      tokenEvents.push({ timestamp: msg.timestamp, team, tokens: estimateTokens(msg.content) });
+      activityByAgent.set(msg.from, (activityByAgent.get(msg.from) || 0) + estimateTokens(msg.content));
+      teamActivityStarts[team].push(msg.timestamp);
+
+      const featureMatch = msg.content.match(/Starting tests for:\s*"([^"]+)"/i);
+      if (team === 'qa' && featureMatch) featureStarts.set(featureMatch[1], msg.timestamp);
+      if (team === 'red' && msg.tags?.includes('exploit') && /\bStarting exploit attempt:/i.test(msg.content)) {
+        exploitStarts.push({ label: msg.content.replace(/^Starting exploit attempt:\s*/i, '').trim(), timestamp: msg.timestamp });
+      }
+    });
+  });
+
+  Object.entries(state.dms).forEach(([agentId, entries]) => {
+    const team = agentTeam(agentId);
+    entries.forEach(entry => {
+      if (!['qa', 'red', 'devops'].includes(team)) return;
+      tokenEvents.push({ timestamp: entry.timestamp, team, tokens: estimateTokens(entry.fullText || entry.line) });
+      activityByAgent.set(agentId, (activityByAgent.get(agentId) || 0) + estimateTokens(entry.fullText || entry.line));
+      teamActivityStarts[team].push(entry.timestamp);
+
+      const featureMatch = (entry.fullText || entry.line).match(/Starting feature test:\s*(.+)$/im);
+      if (team === 'qa' && featureMatch) featureStarts.set(featureMatch[1].trim(), entry.timestamp);
+      if (team === 'red') {
+        const exploitMatch = (entry.fullText || entry.line).match(/Attempting exploit:\s*(.+)$/im);
+        if (exploitMatch) exploitStarts.push({ label: exploitMatch[1].trim(), timestamp: entry.timestamp });
+      }
+    });
+  });
+
+  const reports = [...state.reports].sort((a, b) => a.timestamp - b.timestamp);
+  const qaReports = reports.filter(r => r.team === 'qa');
+  const redReports = reports.filter(r => r.team === 'red');
+  const devopsReports = reports.filter(r => r.team === 'devops');
+
+  const leadTimes = reports.map(report => {
+    const start = findInvestigationStart(report.team, report.timestamp, featureStarts, exploitStarts, teamActivityStarts);
+    return {
+      team: report.team,
+      ms: Math.max(0, report.timestamp - start),
+      label: report.title,
+    };
+  });
+
+  const reportBuckets = buildMetricBuckets(reports.map(report => ({
+    timestamp: report.timestamp,
+    qa: report.team === 'qa' ? 1 : 0,
+    red: report.team === 'red' ? 1 : 0,
+    devops: report.team === 'devops' ? 1 : 0,
+    total: 1,
+  })));
+
+  const tokenBuckets = buildMetricBuckets(tokenEvents.map(event => ({
+    timestamp: event.timestamp,
+    [event.team]: event.tokens,
+    total: event.tokens,
+  })));
+
+  const reviewThreads = collectReviewThreads();
+  const reviewStatus = summarizeReviews(reviewThreads);
+
+  const severityBreakdown = ['Critical', 'High', 'Medium', 'Low', 'Info'].map(level => ({
+    level,
+    total: reports.filter(report => report.severity === level).length,
+    qa: qaReports.filter(report => report.severity === level).length,
+    red: redReports.filter(report => report.severity === level).length,
+    devops: devopsReports.filter(report => report.severity === level).length,
+  })).filter(item => item.total > 0);
+
+  const topAgents = Array.from(activityByAgent.entries())
+    .map(([agentId, tokens]) => ({ agentId, tokens, team: agentTeam(agentId) }))
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, 6);
+
+  const events = buildMajorEvents(reports);
+  const timeline = computeTimelineBounds([
+    ...reports.map(r => r.timestamp),
+    ...state.channels.system.map(e => e.timestamp),
+    ...tokenEvents.map(e => e.timestamp),
+  ]);
+
+  const totalTokens = tokenEvents.reduce((sum, event) => sum + event.tokens, 0);
+  const tokensByTeam = {
+    qa: tokenEvents.filter(event => event.team === 'qa').reduce((sum, event) => sum + event.tokens, 0),
+    red: tokenEvents.filter(event => event.team === 'red').reduce((sum, event) => sum + event.tokens, 0),
+    devops: tokenEvents.filter(event => event.team === 'devops').reduce((sum, event) => sum + event.tokens, 0),
+  };
+  const systemDownCount = state.channels.system.filter(event => event.event === 'SITE_DOWN').length;
+  const systemUpCount = state.channels.system.filter(event => event.event === 'SITE_UP').length;
+
+  return {
+    totalReports: reports.length,
+    qa: { featuresTested: featureStarts.size, issuesFound: qaReports.length },
+    red: { exploitsTried: exploitStarts.length, exploitsFound: redReports.length },
+    devopsReports: devopsReports.length,
+    avgReportLeadMs: average(leadTimes.map(item => item.ms)),
+    fastestLeadMs: leadTimes.length ? Math.min(...leadTimes.map(item => item.ms)) : 0,
+    fastestLeadLabel: leadTimes.sort((a, b) => a.ms - b.ms)[0]?.label || 'No reports yet',
+    avgLeadByTeam: {
+      qa: average(leadTimes.filter(item => item.team === 'qa').map(item => item.ms)),
+      red: average(leadTimes.filter(item => item.team === 'red').map(item => item.ms)),
+      devops: average(leadTimes.filter(item => item.team === 'devops').map(item => item.ms)),
+    },
+    reviewStatus,
+    severityBreakdown,
+    topAgents,
+    events,
+    timeline,
+    reportBuckets,
+    tokenBuckets,
+    totalTokens,
+    tokensByTeam,
+    systemDownCount,
+    systemUpCount,
+    uptimePercent: calculateUptimePercent(timeline),
+  };
+}
+
+function buildMetricBuckets(events) {
+  if (!events.length) return [];
+  const timeline = computeTimelineBounds(events.map(event => event.timestamp));
+  const bucketCount = Math.min(16, Math.max(6, events.length));
+  const span = Math.max(1, timeline.end - timeline.start);
+  const bucketSize = Math.max(1, Math.ceil(span / bucketCount));
+  const buckets = Array.from({ length: bucketCount }, (_, index) => ({
+    start: timeline.start + index * bucketSize,
+    end: timeline.start + (index + 1) * bucketSize,
+    total: 0,
+    qa: 0,
+    red: 0,
+    devops: 0,
+  }));
+
+  events.forEach(event => {
+    const index = Math.min(bucketCount - 1, Math.floor((event.timestamp - timeline.start) / bucketSize));
+    const bucket = buckets[index];
+    bucket.total += event.total || 0;
+    bucket.qa += event.qa || 0;
+    bucket.red += event.red || 0;
+    bucket.devops += event.devops || 0;
+  });
+
+  let runningTotal = 0;
+  buckets.forEach(bucket => {
+    runningTotal += bucket.total;
+    bucket.cumulative = runningTotal;
+  });
+  return buckets;
+}
+
+function computeTimelineBounds(timestamps) {
+  const now = Date.now();
+  const valid = timestamps.filter(Boolean);
+  if (!valid.length) return { start: now - 60 * 60 * 1000, end: now };
+  const start = Math.min(...valid);
+  const end = Math.max(...valid, start + 60 * 1000);
+  return { start, end };
+}
+
+function findInvestigationStart(team, reportTs, featureStarts, exploitStarts, teamActivityStarts) {
+  let candidates = [];
+  if (team === 'qa') {
+    candidates = [...featureStarts.values()].filter(ts => ts <= reportTs);
+  } else if (team === 'red') {
+    candidates = exploitStarts.map(item => item.timestamp).filter(ts => ts <= reportTs);
+  }
+  if (!candidates.length) candidates = (teamActivityStarts[team] || []).filter(ts => ts <= reportTs);
+  return candidates.length ? Math.max(...candidates) : reportTs;
+}
+
+function collectReviewThreads() {
+  const threads = new Map();
+  ['qa', 'red', 'devops'].forEach(team => {
+    (state.channels[team] || []).forEach(msg => {
+      if (!msg.review) return;
+      const id = msg.review.findingId || msg.threadId || msg.id;
+      const record = threads.get(id) || { team, statuses: [] };
+      record.team = team;
+      record.statuses.push(msg.review.status);
+      threads.set(id, record);
+    });
+  });
+  return Array.from(threads.values());
+}
+
+function summarizeReviews(threads) {
+  const byTeam = {
+    qa: { total: 0, rejected: 0, unrejected: 0 },
+    red: { total: 0, rejected: 0, unrejected: 0 },
+    devops: { total: 0, rejected: 0, unrejected: 0 },
+  };
+  threads.forEach(thread => {
+    if (!byTeam[thread.team]) return;
+    const latest = thread.statuses[thread.statuses.length - 1];
+    byTeam[thread.team].total += 1;
+    if (latest === 'needs_revision') byTeam[thread.team].rejected += 1;
+    else byTeam[thread.team].unrejected += 1;
+  });
+  return {
+    total: threads.length,
+    rejected: Object.values(byTeam).reduce((sum, team) => sum + team.rejected, 0),
+    unrejected: Object.values(byTeam).reduce((sum, team) => sum + team.unrejected, 0),
+    byTeam,
+  };
+}
+
+function buildMajorEvents(reports) {
+  const items = [];
+  state.channels.system.forEach(event => {
+    items.push({
+      timestamp: event.timestamp,
+      type: event.event,
+      label: event.event.replace(/_/g, ' '),
+      detail: event.detail || '',
+      color: event.event === 'SITE_DOWN' ? 'var(--red)' : event.event === 'SITE_UP' ? 'var(--green)' : 'var(--yellow)',
+    });
+  });
+  reports.forEach(report => {
+    items.push({
+      timestamp: report.timestamp,
+      type: 'REPORT',
+      label: report.title,
+      detail: `${report.team} • ${report.severity}`,
+      color: report.team === 'qa' ? 'var(--green)' : report.team === 'red' ? 'var(--red)' : '#7289da',
+    });
+  });
+  return items.sort((a, b) => a.timestamp - b.timestamp).slice(-8).reverse();
+}
+
+function calculateUptimePercent(timeline) {
+  const events = [...state.channels.system].sort((a, b) => a.timestamp - b.timestamp);
+  if (!events.length) return 100;
+  let current = true;
+  let last = timeline.start;
+  let upTime = 0;
+  events.forEach(event => {
+    if (current) upTime += Math.max(0, event.timestamp - last);
+    current = event.event !== 'SITE_DOWN';
+    last = event.timestamp;
+  });
+  if (current) upTime += Math.max(0, timeline.end - last);
+  return Math.max(0, Math.min(100, Math.round((upTime / Math.max(1, timeline.end - timeline.start)) * 100)));
+}
+
+function renderMetricChip(label, value, detail) {
+  return `<div class="metric-chip"><strong>${escHtml(value)}</strong><span>${escHtml(label)} • ${escHtml(detail)}</span></div>`;
+}
+
+function renderMiniMetric(label, value, detail) {
+  return `<div class="metrics-mini"><strong>${escHtml(value)}</strong><span>${escHtml(label)} • ${escHtml(detail)}</span></div>`;
+}
+
+function renderCumulativeReportChart(buckets, timeline) {
+  if (!buckets.length) return `<div class="metric-empty">Reports will start drawing here once findings are filed.</div>`;
+  const width = 640, height = 220, pad = 24;
+  const max = Math.max(...buckets.map(bucket => bucket.cumulative), 1);
+  const points = buckets.map((bucket, index) => {
+    const x = pad + (index / Math.max(1, buckets.length - 1)) * (width - pad * 2);
+    const y = height - pad - (bucket.cumulative / max) * (height - pad * 2);
+    return { x, y, bucket };
+  });
+  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  const dots = points.map(point => `<circle class="metric-dot" cx="${point.x}" cy="${point.y}" r="5" fill="var(--yellow)" data-tip="${escHtml(`${formatBucketLabel(point.bucket.start, point.bucket.end)} • ${point.bucket.cumulative} total reports`)}"></circle>`).join('');
+  return `<div class="metric-chart">
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <line class="metric-grid-line" x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}"></line>
+      <line class="metric-grid-line" x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}"></line>
+      <path d="${path}" class="metric-spark-line" stroke="var(--yellow)"></path>
+      ${dots}
+    </svg>
+    <div class="timeline-labels"><span>${formatDateShort(timeline.start)}</span><span>${formatDateShort(timeline.end)}</span></div>
+  </div>`;
+}
+
+function renderCompareBars(items, subtitle) {
+  const max = Math.max(...items.map(item => item.value), 1);
+  const bars = items.map(item => `
+    <div class="metric-list-row">
+      <strong>${escHtml(item.label)}</strong>
+      <div class="metric-track">
+        <div class="metric-track-fill metric-bar" style="width:${(item.value / max) * 100}%;background:${item.color}" data-tip="${escHtml(`${item.label}: ${item.value}`)}"></div>
+      </div>
+      <span>${item.value}</span>
+    </div>`).join('');
+  return `<div class="metric-list">${bars}</div><div class="metric-sub">${escHtml(subtitle)}</div>`;
+}
+
+function renderTokenTimeline(buckets) {
+  if (!buckets.length) return `<div class="metric-empty">Token estimates appear once the agents start talking.</div>`;
+  const width = 680, height = 220, pad = 24;
+  const keys = [
+    { key: 'total', color: '#f2f3f5', label: 'Total' },
+    { key: 'qa', color: 'var(--green)', label: 'QA' },
+    { key: 'red', color: 'var(--red)', label: 'Red Team' },
+    { key: 'devops', color: '#7289da', label: 'DevOps' },
+  ];
+  const max = Math.max(...buckets.flatMap(bucket => keys.map(item => bucket[item.key] || 0)), 1);
+  const lines = keys.map(item => {
+    const points = buckets.map((bucket, index) => {
+      const x = pad + (index / Math.max(1, buckets.length - 1)) * (width - pad * 2);
+      const y = height - pad - ((bucket[item.key] || 0) / max) * (height - pad * 2);
+      return { x, y, bucket };
+    });
+    const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+    const dots = points.map(point => `<circle class="metric-dot" cx="${point.x}" cy="${point.y}" r="4" fill="${item.color}" data-tip="${escHtml(`${item.label} • ${formatBucketLabel(point.bucket.start, point.bucket.end)} • ~${Math.round(point.bucket[item.key] || 0)} tokens`)}"></circle>`).join('');
+    return `<path d="${path}" class="metric-spark-line" stroke="${item.color}" opacity="${item.key === 'total' ? '1' : '0.78'}"></path>${dots}`;
+  }).join('');
+  const legend = keys.map(item => `<span class="metric-legend"><i style="background:${item.color}"></i>${escHtml(item.label)}</span>`).join('');
+  return `<div class="metric-chart">
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <line class="metric-grid-line" x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}"></line>
+      <line class="metric-grid-line" x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}"></line>
+      ${lines}
+    </svg>
+    <div class="metric-label-row">${legend}</div>
+  </div>`;
+}
+
+function renderReviewDonut(reviewStatus) {
+  if (!reviewStatus.total) return `<div class="metric-empty">Once review threads exist, the draft funnel will show up here.</div>`;
+  const palette = { qa: '#3ba55c', red: '#ed4245', devops: '#7289da' };
+  const centerX = 150, centerY = 150;
+  const outer = buildDonutSegments(centerX, centerY, 94, 124, [
+    { value: reviewStatus.byTeam.qa.total, color: palette.qa, tip: `QA drafts: ${reviewStatus.byTeam.qa.total}` },
+    { value: reviewStatus.byTeam.red.total, color: palette.red, tip: `Red Team drafts: ${reviewStatus.byTeam.red.total}` },
+    { value: reviewStatus.byTeam.devops.total, color: palette.devops, tip: `DevOps drafts: ${reviewStatus.byTeam.devops.total}` },
+  ]);
+  const inner = buildDonutSegments(centerX, centerY, 52, 86, [
+    { value: reviewStatus.byTeam.qa.unrejected, color: 'rgba(59,165,92,0.92)', tip: `QA unrejected: ${reviewStatus.byTeam.qa.unrejected}` },
+    { value: reviewStatus.byTeam.qa.rejected, color: 'rgba(59,165,92,0.38)', tip: `QA rejected: ${reviewStatus.byTeam.qa.rejected}` },
+    { value: reviewStatus.byTeam.red.unrejected, color: 'rgba(237,66,69,0.92)', tip: `Red Team unrejected: ${reviewStatus.byTeam.red.unrejected}` },
+    { value: reviewStatus.byTeam.red.rejected, color: 'rgba(237,66,69,0.38)', tip: `Red Team rejected: ${reviewStatus.byTeam.red.rejected}` },
+    { value: reviewStatus.byTeam.devops.unrejected, color: 'rgba(114,137,218,0.92)', tip: `DevOps unrejected: ${reviewStatus.byTeam.devops.unrejected}` },
+    { value: reviewStatus.byTeam.devops.rejected, color: 'rgba(114,137,218,0.38)', tip: `DevOps rejected: ${reviewStatus.byTeam.devops.rejected}` },
+  ]);
+  return `<div class="donut-wrap">
+    <div style="position:relative;width:300px;height:300px">
+      <svg viewBox="0 0 300 300">
+        ${outer}
+        ${inner}
+      </svg>
+      <div class="donut-center">
+        <strong>${reviewStatus.unrejected}/${reviewStatus.total}</strong>
+        <span>unrejected drafts</span>
+      </div>
+    </div>
+    <div class="metric-label-row">
+      <span class="metric-legend"><i style="background:${palette.qa}"></i>QA</span>
+      <span class="metric-legend"><i style="background:${palette.red}"></i>Red Team</span>
+      <span class="metric-legend"><i style="background:${palette.devops}"></i>DevOps</span>
+      <span class="metric-legend"><i style="background:rgba(255,255,255,0.28)"></i>faint = rejected</span>
+    </div>
+  </div>`;
+}
+
+function buildDonutSegments(cx, cy, innerR, outerR, segments) {
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0) || 1;
+  let angle = -Math.PI / 2;
+  return segments.filter(segment => segment.value > 0).map(segment => {
+    const portion = (segment.value / total) * Math.PI * 2;
+    const next = angle + portion;
+    const largeArc = portion > Math.PI ? 1 : 0;
+    const path = donutArcPath(cx, cy, innerR, outerR, angle, next, largeArc);
+    angle = next;
+    return `<path d="${path}" fill="${segment.color}" data-tip="${escHtml(segment.tip)}"></path>`;
+  }).join('');
+}
+
+function donutArcPath(cx, cy, innerR, outerR, start, end, largeArc) {
+  const p1 = polar(cx, cy, outerR, start);
+  const p2 = polar(cx, cy, outerR, end);
+  const p3 = polar(cx, cy, innerR, end);
+  const p4 = polar(cx, cy, innerR, start);
+  return [
+    `M ${p1.x} ${p1.y}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 1 ${p2.x} ${p2.y}`,
+    `L ${p3.x} ${p3.y}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 0 ${p4.x} ${p4.y}`,
+    'Z',
+  ].join(' ');
+}
+
+function polar(cx, cy, r, angle) {
+  return { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r };
+}
+
+function renderSeverityList(items) {
+  if (!items.length) return `<div class="metric-empty">Severity distribution will appear once reports land.</div>`;
+  const max = Math.max(...items.map(item => item.total), 1);
+  const colors = { Critical: '#ff6b6b', High: '#ff8c42', Medium: 'var(--yellow)', Low: '#7289da', Info: 'var(--text-muted)' };
+  return `<div class="metric-list">${items.map(item => `
+    <div class="metric-list-row">
+      <strong>${escHtml(item.level)}</strong>
+      <div class="metric-track">
+        <div class="metric-track-fill metric-bar" style="width:${(item.total / max) * 100}%;background:${colors[item.level] || '#fff'}" data-tip="${escHtml(`${item.level}: ${item.total} total (${item.qa} QA, ${item.red} Red, ${item.devops} DevOps)`)}"></div>
+      </div>
+      <span>${item.total}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderEventTimeline(timeline, events) {
+  const width = 620, height = 92, pad = 16;
+  const totalSpan = Math.max(1, timeline.end - timeline.start);
+  const system = [...state.channels.system].sort((a, b) => a.timestamp - b.timestamp);
+  const segments = [];
+  let last = timeline.start;
+  let up = true;
+  system.forEach(event => {
+    segments.push({ start: last, end: event.timestamp, up });
+    up = event.event !== 'SITE_DOWN';
+    last = event.timestamp;
+  });
+  segments.push({ start: last, end: timeline.end, up });
+
+  const band = segments.map(segment => {
+    const x = pad + ((segment.start - timeline.start) / totalSpan) * (width - pad * 2);
+    const w = Math.max(2, ((segment.end - segment.start) / totalSpan) * (width - pad * 2));
+    const color = segment.up ? 'rgba(59,165,92,0.32)' : 'rgba(237,66,69,0.32)';
+    const tip = `${formatDate(segment.start)} to ${formatDate(segment.end)} • server ${segment.up ? 'up' : 'down'}`;
+    return `<rect x="${x}" y="32" width="${w}" height="28" rx="14" fill="${color}" data-tip="${escHtml(tip)}"></rect>`;
+  }).join('');
+
+  const marks = events.slice().reverse().map(event => {
+    const x = pad + ((event.timestamp - timeline.start) / totalSpan) * (width - pad * 2);
+    return `<circle class="metric-dot" cx="${x}" cy="46" r="7" fill="${event.color}" data-tip="${escHtml(`${event.label} • ${event.detail || formatDate(event.timestamp)}`)}"></circle>`;
+  }).join('');
+
+  return `<div class="timeline-wrap"><div class="metric-chart">
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <line class="metric-grid-line" x1="${pad}" y1="46" x2="${width - pad}" y2="46"></line>
+      ${band}
+      ${marks}
+    </svg>
+    <div class="timeline-labels"><span>${formatDateShort(timeline.start)}</span><span>${formatDateShort(timeline.end)}</span></div>
+  </div></div>`;
+}
+
+function renderEventList(events) {
+  if (!events.length) return `<div class="metric-empty">No major events recorded yet.</div>`;
+  return events.map(event => `
+    <div class="event-item">
+      <div class="event-dot" style="background:${event.color}"></div>
+      <div class="event-time">${formatTime(event.timestamp)}</div>
+      <div class="event-copy">
+        <strong>${escHtml(event.label)}</strong>
+        <span>${escHtml(event.detail || formatDate(event.timestamp))}</span>
+      </div>
+    </div>`).join('');
+}
+
+function renderTopAgents(items) {
+  if (!items.length) return `<div class="metric-empty">Agent activity will show up here once the run gets going.</div>`;
+  const max = Math.max(...items.map(item => item.tokens), 1);
+  return `<div class="metric-list">${items.map(item => {
+    const agent = state.agents[item.agentId] || { displayName: item.agentId, color: '#5865f2', emoji: '🤖' };
+    return `<div class="metric-list-row">
+      <strong><span style="display:inline-flex;align-items:center;gap:8px"><span class="avatar-sm" style="background:${agent.color}">${escHtml(agent.emoji)}</span><span>${renderAgentName(agent.displayName, item.agentId)}</span></span></strong>
+      <div class="metric-track">
+        <div class="metric-track-fill metric-bar" style="width:${(item.tokens / max) * 100}%;background:${agent.color}" data-tip="${escHtml(`${agent.displayName}: ~${item.tokens} tokens observed`)}"></div>
+      </div>
+      <span>${formatCompact(item.tokens)}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function bindMetricTooltips(root) {
+  root.querySelectorAll('[data-tip]').forEach(node => {
+    node.addEventListener('mouseenter', event => showMetricTooltip(event, node.dataset.tip));
+    node.addEventListener('mousemove', event => moveMetricTooltip(event));
+    node.addEventListener('mouseleave', hideMetricTooltip);
+  });
+}
+
+function showMetricTooltip(event, text) {
+  const tooltip = document.getElementById('metric-tooltip');
+  tooltip.textContent = text || '';
+  tooltip.classList.add('open');
+  moveMetricTooltip(event);
+}
+
+function moveMetricTooltip(event) {
+  const tooltip = document.getElementById('metric-tooltip');
+  tooltip.style.left = `${event.clientX}px`;
+  tooltip.style.top = `${event.clientY}px`;
+}
+
+function hideMetricTooltip() {
+  document.getElementById('metric-tooltip').classList.remove('open');
+}
+
+function average(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function formatDuration(ms) {
+  if (!ms) return 'n/a';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+function formatCompact(value) {
+  if (!value) return '0';
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+  return String(Math.round(value));
+}
+
+function formatDateShort(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function formatBucketLabel(startTs, endTs) {
   const start = new Date(startTs);
   const end = new Date(endTs);
@@ -1197,7 +2044,7 @@ function renderThreadReplies(replies) {
         <div class="thread-avatar" style="background:${agent.color}" onclick="showProfile('${safe}',event)" title="${escHtml(agent.displayName)}">${escHtml(agent.emoji)}</div>
         <div class="thread-body">
           <div class="thread-meta">
-            <span class="thread-name" style="color:${agent.color}">${escHtml(agent.displayName)}</span>
+            <span class="thread-name" style="color:${agent.color}" onclick="showProfile('${safe}',event)">${renderAgentName(agent.displayName, reply.from)}</span>
             <span class="thread-time">${formatTime(reply.timestamp)}</span>
           </div>
           ${banner}
