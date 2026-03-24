@@ -1,0 +1,62 @@
+# silly-testers configuration
+# Copy this file to config.yaml and fill in your values.
+# config.yaml is gitignored — it contains local paths specific to your machine.
+
+target:
+  # Absolute path to the repository you want to test
+  repo: /absolute/path/to/your-app
+
+  # Path to your feature list (relative to this config file)
+  featureList: ./features.md
+
+  # start command and URL are auto-discovered by the DevOps agent — no need to set them here
+
+ollama:
+  # Ollama server endpoint (default: local)
+  endpoint: "http://localhost:11434"
+
+  # Model for text reasoning (must be pulled: ollama pull llama3.1:8b)
+  textModel: "llama3.1:8b"
+
+  # Model for screenshot/canvas analysis (must be pulled: ollama pull llava)
+  visionModel: "llava"
+
+  # Timeout for LLM requests in milliseconds
+  timeoutMs: 120000
+
+agents:
+  qa:
+    # Number of feature testers (each tests a subset of your feature list)
+    featureTesters: 2
+    # Number of play testers (free-form explorers with random goals)
+    playTesters: 2
+
+  redTeam:
+    # Number of recon agents (map attack surface from repo + browser crawl)
+    recon: 1
+    # Number of exploit agents (attempt vulnerabilities from recon findings)
+    exploit: 2
+
+browser:
+  # Run Chrome in headless mode (set to false to watch agents in real-time)
+  headless: true
+  # Default timeout for page interactions (ms)
+  timeoutMs: 30000
+
+reports:
+  # Directory where reports are written (relative to this config file)
+  outputDir: ./reports
+
+runner:
+  # How often play testers get a new random goal (ms) — default 5 minutes
+  playTesterGoalIntervalMs: 300000
+
+  # Total run duration in ms. Set to 0 for unlimited (stop with Ctrl+C)
+  maxRunDurationMs: 0
+
+  # How long to wait for the server to respond on each startup attempt (ms)
+  serverStartTimeoutMs: 60000
+
+  # How many times the DevOps agent will attempt to fix a failing startup before giving up
+  # On the final attempt a report is written to reports/devops/ instead of another fix attempt
+  startupRetries: 10

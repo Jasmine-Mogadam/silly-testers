@@ -1,0 +1,29 @@
+{
+  "name": "silly-testers",
+  "version": "0.1.0",
+  "description": "AI agent framework for QA and red team testing of web applications",
+  "main": "dist/index.js",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "setup:models": "ollama pull llama3.1:8b && ollama pull llava",
+    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "js-yaml": "^4.1.0",
+    "p-limit": "^6.1.0",
+    "playwright": "^1.44.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
