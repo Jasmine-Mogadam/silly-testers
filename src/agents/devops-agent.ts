@@ -3,7 +3,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { BaseAgent, type AgentDeps } from './base-agent';
 import { ReportType, Severity, Team } from '../core/types';
-import type { WatchdogConfig, SiteMap, Route, DiscoveredTarget } from '../core/types';
+import type { WatchdogConfig, SiteMap, Route, DiscoveredTarget, HealthStatus } from '../core/types';
 import type { OllamaClient } from '../core/llm';
 import { RepoReader } from '../core/repo-reader';
 
@@ -587,6 +587,27 @@ export class DevOpsAgent extends BaseAgent {
     // Not used in streaming mode; use configure() instead
   }
 
+  announceCrashIncident(status: HealthStatus, recentServerOutput: string): void {
+    const down = status.checks.filter((check) => !check.up);
+    const cause = this.inferIncidentCause(status, recentServerOutput);
+    const failedChecks = down.map((check) => check.label).join(', ') || 'unknown health checks';
+    this.sendToTeam(
+      `Crash detected. I paused active testing because ${failedChecks} stopped responding. `
+      + `Likely cause: ${cause}. I’m attempting an automatic recovery now.`,
+      ['incident', 'crash']
+    );
+  }
+
+  announceCrashRecovery(status: HealthStatus, recentServerOutput: string): void {
+    const cause = this.inferIncidentCause(status, recentServerOutput);
+    const recoveredChecks = status.checks.map((check) => check.label).join(', ') || 'configured health checks';
+    this.sendToTeam(
+      `Recovery complete. I restarted the app with \`${this.startCommand}\`, and the fix worked because ${recoveredChecks} are responding again. `
+      + `Most likely this cleared ${cause}.`,
+      ['incident', 'recovered']
+    );
+  }
+
   /**
    * Called by the runner after each failed startup attempt.
    *
@@ -742,6 +763,31 @@ Respond with EXACTLY one of the above formats. No preamble.`;
     this.log(`LLM fix suggestion:\n${response.slice(0, 200)}`);
 
     return this.applyFix(response, envTargetDirs);
+  }
+
+  private inferIncidentCause(status: HealthStatus, recentServerOutput: string): string {
+    const text = `${recentServerOutput}\n${status.checks.map((check) => `${check.label} ${check.error ?? ''}`).join('\n')}`.toLowerCase();
+
+    if (text.includes('ioredis') || text.includes('redis') || text.includes('econnrefused')) {
+      return 'the app lost connectivity to Redis or another local dependency, which caused the health endpoint to fail';
+    }
+    if (text.includes('eaddrinuse') || text.includes('address already in use')) {
+      return 'the server could not bind its port because another process was already using it';
+    }
+    if (text.includes('environment variable not found') || text.includes('missing required env var') || text.includes('process.env')) {
+      return 'a required environment variable was missing or invalid at runtime';
+    }
+    if (text.includes('module_not_found') || text.includes('cannot find module')) {
+      return 'the server is missing a required dependency or build artifact';
+    }
+    if (text.includes('prisma') && (text.includes('connect') || text.includes('database'))) {
+      return 'the application could not reach its database dependency';
+    }
+    if (status.checks.some((check) => /timeout/i.test(check.error ?? ''))) {
+      return 'the server stopped responding before the health check timeout, likely due to a hung or crashed process';
+    }
+
+    return 'the application process became unhealthy and stopped serving its configured health endpoint';
   }
 
   private applyFix(response: string, envTargetDirs: string[] = [this.repoPath]): { fixApplied: boolean } {

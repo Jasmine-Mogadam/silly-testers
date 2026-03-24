@@ -98,10 +98,11 @@ export class Watchdog extends EventEmitter {
       this.log(`Health check failed. Down: ${downServices}`);
 
       if (this.consecutiveFailures === 1) {
-        // First failure — notify listeners and attempt restart
+        // First failure — notify listeners once so agents can pause promptly.
         this.emit('unhealthy', status);
-        await this.attemptRestart();
       }
+
+      await this.attemptRestart();
     }
 
     this.scheduleCheck();
@@ -152,12 +153,20 @@ export class Watchdog extends EventEmitter {
       await sleep(5_000);
 
       const status = await this.performHealthCheck();
+      this.lastStatus = status;
       if (status.healthy) {
         this.consecutiveFailures = 0;
+        this.restartAttempts = 0;
         this.log('Server recovered after restart.');
         this.emit('healthy', status);
       } else {
         this.log(`Server still unhealthy after restart ${this.restartAttempts}.`);
+        if (this.restartAttempts >= this.config.maxRestartAttempts) {
+          const summary = this.buildFailureSummary();
+          this.log(`Giving up after ${this.restartAttempts} restart attempts.`);
+          this.emit('give-up', summary);
+          this.stop();
+        }
         // Will retry on next tick
       }
     } catch (err) {

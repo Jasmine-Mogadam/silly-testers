@@ -62,18 +62,20 @@
   #channel-header .ch-desc { font-size: 12px; color: var(--text-muted); margin-left: 6px; }
 
   /* ── Channel messages (compact bubbles) ── */
-  #messages { flex: 1; overflow-y: auto; padding: 8px 14px; display: flex; flex-direction: column; gap: 2px; }
+  #messages { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 1px; }
   #messages::-webkit-scrollbar { width: 5px; } #messages::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
-  .msg-group { display: flex; gap: 8px; padding: 2px 0; }
-  .msg-avatar { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; margin-top: 1px; cursor: pointer; transition: transform 0.1s, box-shadow 0.1s; }
+  .msg-group { display: flex; gap: 7px; padding: 1px 0; }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; margin-top: 1px; cursor: pointer; transition: transform 0.1s, box-shadow 0.1s; }
   .msg-avatar:hover { transform: scale(1.1); box-shadow: 0 2px 10px rgba(0,0,0,0.4); }
   .msg-body { flex: 1; min-width: 0; }
-  .msg-meta { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; padding-left: 1px; }
+  .msg-meta { display: flex; align-items: baseline; gap: 6px; margin-bottom: 1px; padding-left: 1px; }
   .msg-name { font-weight: 700; font-size: 13px; cursor: pointer; }
   .msg-name:hover { text-decoration: underline; }
   .msg-time { font-size: 10px; color: var(--text-muted); }
-  .msg-bubble { border-radius: 3px 12px 12px 12px; padding: 5px 10px; display: inline-block; max-width: 100%; border-left: 2px solid; word-break: break-word; white-space: pre-wrap; line-height: 1.45; font-size: 13px; color: var(--text-bright); }
-  .msg-tags { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 3px; }
+  .msg-bubble { border-radius: 3px 12px 12px 12px; padding: 4px 9px; display: inline-block; max-width: 100%; border-left: 2px solid; word-break: break-word; white-space: normal; line-height: 1.35; font-size: 13px; color: var(--text-bright); }
+  .msg-content { margin: 0; white-space: pre-wrap; }
+  .msg-summary-note { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 4px; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; background: rgba(88,101,242,0.15); color: #aab4ff; }
+  .msg-tags { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px; }
   .tag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 8px; }
   .tag-report { background: rgba(250,166,26,0.2); color: var(--yellow); }
   .tag-directive { background: rgba(88,101,242,0.2); color: #7289da; }
@@ -83,17 +85,20 @@
   .tag-plan { background: rgba(32,192,192,0.2); color: #20c0c0; }
   .tag-auth, .tag-injection, .tag-routes, .tag-forms, .tag-structure { background: rgba(240,108,0,0.2); color: var(--orange); }
   .tag-default { background: rgba(255,255,255,0.08); color: var(--text-muted); }
-  .msg-image { margin-top: 5px; }
+  .msg-image { margin-top: 4px; }
   .msg-image img { max-width: 420px; max-height: 260px; border-radius: 5px; border: 1px solid var(--border); cursor: zoom-in; display: block; }
-  .msg-thread { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 8px; }
-  .thread-reply { display: flex; gap: 8px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,0.08); }
+  .msg-attachments { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .text-attachment { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: var(--text); font-size: 11px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .text-attachment:hover { border-color: var(--accent); background: rgba(88,101,242,0.08); }
+  .msg-thread { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 6px; }
+  .thread-reply { display: flex; gap: 7px; padding-left: 8px; border-left: 2px solid rgba(255,255,255,0.08); }
   .thread-avatar { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; margin-top: 1px; }
   .thread-body { flex: 1; min-width: 0; }
-  .thread-meta { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; }
+  .thread-meta { display: flex; align-items: baseline; gap: 6px; margin-bottom: 1px; }
   .thread-name { font-size: 12px; font-weight: 700; }
   .thread-time { font-size: 10px; color: var(--text-muted); }
-  .thread-content { font-size: 12px; color: var(--text); white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
-  .review-banner { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
+  .thread-content { font-size: 12px; color: var(--text); white-space: pre-wrap; word-break: break-word; line-height: 1.35; }
+  .review-banner { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 4px; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
   .review-draft { background: rgba(88,101,242,0.18); color: #aab4ff; }
   .review-needs_revision { background: rgba(250,166,26,0.18); color: #ffd173; }
   .review-approved { background: rgba(59,165,92,0.18); color: #7fda98; }
@@ -230,6 +235,18 @@
   .pp-dm-btn:hover { background: #4752c4; }
   .pp-dm-badge { background: var(--red); color: #fff; font-size: 10px; font-weight: 700; min-width: 15px; height: 15px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
   .pp-team-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 7px; }
+  .dm-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+  .dm-team-badge { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; flex-shrink: 0; }
+  .pp-graph-wrap { margin-top: 2px; padding: 8px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }
+  .pp-graph-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .pp-graph-title { font-size: 11px; font-weight: 700; color: var(--text-bright); }
+  .pp-graph-sub { font-size: 10px; color: var(--text-muted); }
+  .pp-graph { position: relative; height: 68px; }
+  .pp-graph svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .pp-graph-bar { fill: rgba(88,101,242,0.5); transition: fill 0.12s ease; }
+  .pp-graph-bar:hover { fill: rgba(88,101,242,0.9); }
+  .pp-graph-axis { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
+  .pp-graph-tooltip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 8px)); padding: 4px 6px; border-radius: 6px; background: rgba(9,10,12,0.96); border: 1px solid rgba(255,255,255,0.08); color: var(--text-bright); font-size: 10px; white-space: nowrap; display: none; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
 
   /* ── Lightbox ── */
   #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 400; align-items: center; justify-content: center; cursor: zoom-out; }
@@ -334,6 +351,17 @@
       <span>Last active</span>
       <strong id="pp-last-active"></strong>
     </div>
+    <div class="pp-row">
+      <span>Model</span>
+      <strong id="pp-model"></strong>
+    </div>
+    <div class="pp-graph-wrap">
+      <div class="pp-graph-head">
+        <span class="pp-graph-title">Token Drift</span>
+        <span class="pp-graph-sub" id="pp-graph-total"></span>
+      </div>
+      <div class="pp-graph" id="pp-token-graph"></div>
+    </div>
     <hr class="pp-divider">
     <button class="pp-dm-btn" onclick="jumpToDmFromPopup()">
       💬 View DMs
@@ -354,6 +382,7 @@ const state = {
   channels:     { qa: [], red: [], devops: [], system: [] },
   dms:          {},  // agentId → DmEntry[]
   reports:      [],
+  meta:         { llmModel: 'unknown' },
   activeView:   'channel',
   activeChannel:'qa',
   activeDm:     null,
@@ -364,6 +393,7 @@ const state = {
 
 // agentId → DmEntry (keyed by entry.id) for fast summary updates
 const logEntries = {};  // id → { el, entry }
+const fullMessageStore = new Map();
 
 const previewCache = new Map();
 let profileAgentId = null;
@@ -389,6 +419,7 @@ function handleMessage(data) {
   switch (data.type) {
     case 'init':              applyInit(data);                              break;
     case 'channel_message':   addChannelMessage(data.channel, data.message); break;
+    case 'channel_message_summary': applyChannelSummary(data);              break;
     case 'system_message':    addSystemMessage(data.payload);               break;
     case 'agent_log':         addAgentLog(data);                            break;
     case 'agent_log_summary': applyLogSummary(data);                        break;
@@ -404,6 +435,7 @@ function applyInit(data) {
     state.channels[ch].forEach(m => { if (m.from) state.agentLastMsg[m.from] = Math.max(state.agentLastMsg[m.from]||0, m.timestamp||0); });
   });
   state.channels.system = data.channels.system || [];
+  state.meta = data.meta || state.meta;
   // dms are DmEntry[] from server
   Object.entries(data.dms || {}).forEach(([id, entries]) => {
     state.dms[id] = Array.isArray(entries) ? entries : [];
@@ -435,6 +467,16 @@ function addChannelMessage(channel, message) {
   const isActive = state.activeView === 'channel' && state.activeChannel === channel;
   if (isActive) { renderCurrentView(); maybeScrollBottom('messages'); }
   else           { incrementUnread(channel); }
+}
+
+function applyChannelSummary(data) {
+  const { channel, id, summary } = data;
+  const entries = state.channels[channel] || [];
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+  entry.displayContent = summary;
+  entry.summarizing = false;
+  if (state.activeView === 'channel' && state.activeChannel === channel) renderCurrentView();
 }
 
 function addSystemMessage(payload) {
@@ -557,6 +599,9 @@ function appendChannelMessage(channel, msg, threadReplies = []) {
   const agent = state.agents[msg.from] || { agentId: msg.from, displayName: msg.from, emoji: '🤖', color: '#5865f2' };
   const safe  = escHtml(msg.from);
   const reviewBanner = renderReviewBanner(msg);
+  const displayContent = msg.displayContent || msg.content;
+  const isSummarized = !!msg.fullContent;
+  if (msg.fullContent) fullMessageStore.set(msg.id, msg.fullContent);
 
   const div = document.createElement('div');
   div.className = 'msg-group';
@@ -569,13 +614,16 @@ function appendChannelMessage(channel, msg, threadReplies = []) {
       </div>
       <div class="msg-bubble" style="background:color-mix(in srgb,${agent.color} 8%,#1e2024);border-left-color:${agent.color}">
         ${reviewBanner}
-        <div class="msg-content">${escHtml(msg.content)}</div>
+        ${isSummarized ? `<div class="msg-summary-note">AI summary${msg.summarizing ? ' • summarizing…' : ''}</div>` : ''}
+        <div class="msg-content">${escHtml(displayContent)}</div>
         ${renderTags(msg.tags)}
+        ${renderMessageAttachments(msg)}
         ${msg.image ? `<div class="msg-image"><img src="data:image/png;base64,${msg.image}" alt="screenshot" onclick="openLightbox(this)"></div>` : ''}
         ${renderThreadReplies(threadReplies)}
       </div>
     </div>`;
   container.appendChild(div);
+  bindFullMessageButtons(div);
 
   const urls = extractUrls(msg.content);
   if (urls.length) urls.forEach(u => fetchPreview(u, div.querySelector('.msg-body')));
@@ -712,9 +760,10 @@ function renderDmList() {
     item.dataset.agent = agent.agentId;
     item.onclick = () => openDm(agent.agentId);
     const badge = state.unread['dm:' + agent.agentId];
+    const teamBadge = renderTeamBadge(agentTeam(agent.agentId), 'dm-team-badge');
     item.innerHTML = `
       <div class="avatar-sm" style="background:${agent.color}">${escHtml(agent.emoji)}</div>
-      <span class="item-name" title="${escHtml(agent.agentId)}">${escHtml(agent.displayName)}</span>
+      <span class="dm-name-row"><span class="item-name" title="${escHtml(agent.agentId)}">${escHtml(agent.displayName)}</span>${teamBadge}</span>
       ${badge ? `<span class="badge">${badge}</span>` : ''}`;
     list.appendChild(item);
   });
@@ -911,6 +960,7 @@ function showProfile(agentId, event) {
   const dotEl = document.getElementById('pp-status-dot');
   dotEl.className = 'pp-status-dot ' + status;
   document.getElementById('pp-status-label').textContent = { active:'Active', thinking:'Thinking…', offline:'Offline' }[status];
+  document.getElementById('pp-model').textContent = state.meta.llmModel || 'unknown';
 
   const lastRow = document.getElementById('pp-last-active-row');
   if (lastActivity) { lastRow.style.display='flex'; document.getElementById('pp-last-active').textContent = timeAgo(lastActivity); }
@@ -920,9 +970,11 @@ function showProfile(agentId, event) {
   badge.style.display = unreadDm ? 'flex' : 'none';
   if (unreadDm) badge.textContent = unreadDm;
 
+  renderTokenGraph(agentId);
+
   const popup = document.getElementById('profile-popup');
   popup.classList.add('open');
-  const pw=256, ph=210;
+  const pw=256, ph=318;
   let x = event.clientX+12, y = event.clientY-10;
   if (x+pw > window.innerWidth-8)  x = event.clientX-pw-12;
   if (y+ph > window.innerHeight-8) y = window.innerHeight-ph-8;
@@ -985,12 +1037,139 @@ function renderReviewBanner(msg) {
   return `<div class="review-banner review-${escHtml(msg.review.status)}">${escHtml(prefix + title)}</div>`;
 }
 
+function renderMessageAttachments(msg) {
+  if (!msg.fullContent) return '';
+  return `<div class="msg-attachments"><button class="text-attachment" data-full-message-id="${escHtml(msg.id)}">📄 full message</button></div>`;
+}
+
+function openTextDetail(event, title, text) {
+  event.stopPropagation();
+  document.getElementById('ld-type-icon').textContent = '📄';
+  document.getElementById('ld-title').textContent = title;
+  document.getElementById('ld-body').innerHTML = `<pre class="plain-view">${escHtml(text)}</pre>`;
+  document.getElementById('log-detail').classList.add('open');
+  document.getElementById('log-overlay').classList.add('open');
+}
+
+function bindFullMessageButtons(root) {
+  root.querySelectorAll('[data-full-message-id]').forEach(button => {
+    button.addEventListener('click', (event) => {
+      const id = button.getAttribute('data-full-message-id');
+      const text = id ? fullMessageStore.get(id) : '';
+      if (!text) return;
+      openTextDetail(event, 'Full Channel Message', text);
+    });
+  });
+}
+
+function renderTeamBadge(team, className = 'pp-team-badge') {
+  const palette = {
+    qa: ['rgba(59,165,92,0.2)','var(--green)'],
+    red: ['rgba(237,66,69,0.2)','var(--red)'],
+    devops: ['rgba(88,101,242,0.2)','#7289da'],
+    unknown: ['rgba(139,140,141,0.2)','var(--text-muted)'],
+  };
+  const [bg, fg] = palette[team] || palette.unknown;
+  return `<span class="${className}" style="background:${bg};color:${fg}">${escHtml(team)}</span>`;
+}
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.max(1, Math.round(String(text).length / 4));
+}
+
+function buildTokenBuckets(agentId) {
+  const events = [];
+  ['qa', 'red', 'devops'].forEach(channel => {
+    (state.channels[channel] || []).forEach(msg => {
+      if (msg.from === agentId) events.push({ timestamp: msg.timestamp, tokens: estimateTokens(msg.content) });
+    });
+  });
+  (state.dms[agentId] || []).forEach(entry => {
+    events.push({ timestamp: entry.timestamp, tokens: estimateTokens(entry.fullText || entry.line) });
+  });
+
+  if (!events.length) return [];
+  events.sort((a, b) => a.timestamp - b.timestamp);
+  const end = events[events.length - 1].timestamp;
+  const start = Math.min(events[0].timestamp, end - 30 * 60 * 1000);
+  const bucketCount = 12;
+  const span = Math.max(1, end - start);
+  const bucketSize = Math.max(1, Math.ceil(span / bucketCount));
+  const buckets = Array.from({ length: bucketCount }, (_, idx) => ({
+    start: start + idx * bucketSize,
+    end: start + (idx + 1) * bucketSize,
+    tokens: 0,
+  }));
+
+  events.forEach(event => {
+    const idx = Math.min(bucketCount - 1, Math.floor((event.timestamp - start) / bucketSize));
+    buckets[idx].tokens += event.tokens;
+  });
+
+  return buckets;
+}
+
+function renderTokenGraph(agentId) {
+  const graph = document.getElementById('pp-token-graph');
+  const totalEl = document.getElementById('pp-graph-total');
+  const buckets = buildTokenBuckets(agentId);
+
+  if (!buckets.length) {
+    totalEl.textContent = 'no activity yet';
+    graph.innerHTML = '<svg viewBox="0 0 216 68" preserveAspectRatio="none"><line class="pp-graph-axis" x1="0" y1="64" x2="216" y2="64"></line></svg>';
+    return;
+  }
+
+  const width = 216;
+  const maxTokens = Math.max(...buckets.map(bucket => bucket.tokens), 1);
+  const gap = 4;
+  const barWidth = Math.floor((width - gap * (buckets.length - 1)) / buckets.length);
+  const total = buckets.reduce((sum, bucket) => sum + bucket.tokens, 0);
+  totalEl.textContent = `~${total} tokens`;
+
+  const tooltip = `<div class="pp-graph-tooltip" id="pp-graph-tooltip"></div>`;
+  const bars = buckets.map((bucket, idx) => {
+    const barHeight = bucket.tokens ? Math.max(4, Math.round((bucket.tokens / maxTokens) * 52)) : 2;
+    const x = idx * (barWidth + gap);
+    const y = 64 - barHeight;
+    const label = `${formatBucketLabel(bucket.start, bucket.end)} • ~${bucket.tokens} tokens`;
+    return `<rect class="pp-graph-bar" x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="3" data-tip="${escHtml(label)}"></rect>`;
+  }).join('');
+
+  graph.innerHTML = `${tooltip}<svg viewBox="0 0 ${width} 68" preserveAspectRatio="none"><line class="pp-graph-axis" x1="0" y1="64" x2="${width}" y2="64"></line>${bars}</svg>`;
+
+  const tooltipEl = document.getElementById('pp-graph-tooltip');
+  graph.querySelectorAll('.pp-graph-bar').forEach(bar => {
+    bar.addEventListener('mouseenter', () => {
+      tooltipEl.textContent = bar.dataset.tip;
+      tooltipEl.style.display = 'block';
+    });
+    bar.addEventListener('mousemove', (event) => {
+      const bounds = graph.getBoundingClientRect();
+      tooltipEl.style.left = `${event.clientX - bounds.left}px`;
+      tooltipEl.style.top = `${event.clientY - bounds.top}px`;
+    });
+    bar.addEventListener('mouseleave', () => {
+      tooltipEl.style.display = 'none';
+    });
+  });
+}
+
+function formatBucketLabel(startTs, endTs) {
+  const start = new Date(startTs);
+  const end = new Date(endTs);
+  return `${start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}-${end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
 function renderThreadReplies(replies) {
   if (!replies.length) return '';
   const items = replies.map(reply => {
     const agent = state.agents[reply.from] || { displayName: reply.from, emoji: '🤖', color: '#5865f2' };
     const safe = escHtml(reply.from);
     const banner = renderReviewBanner(reply);
+    const displayContent = reply.displayContent || reply.content;
+    if (reply.fullContent) fullMessageStore.set(reply.id, reply.fullContent);
     return `
       <div class="thread-reply">
         <div class="thread-avatar" style="background:${agent.color}" onclick="showProfile('${safe}',event)" title="${escHtml(agent.displayName)}">${escHtml(agent.emoji)}</div>
@@ -1000,8 +1179,10 @@ function renderThreadReplies(replies) {
             <span class="thread-time">${formatTime(reply.timestamp)}</span>
           </div>
           ${banner}
-          <div class="thread-content">${escHtml(reply.content)}</div>
+          ${reply.fullContent ? `<div class="msg-summary-note">AI summary${reply.summarizing ? ' • summarizing…' : ''}</div>` : ''}
+          <div class="thread-content">${escHtml(displayContent)}</div>
           ${renderTags(reply.tags)}
+          ${renderMessageAttachments(reply)}
         </div>
       </div>`;
   }).join('');

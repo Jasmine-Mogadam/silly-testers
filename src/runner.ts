@@ -34,6 +34,7 @@ export class Runner {
   private browserPool: BrowserPool | null = null;
   private qaCoordinator: QACoordinator | null = null;
   private redCoordinator: RedCoordinator | null = null;
+  private activeCrashIncident: { announcedAt: number; recentOutput: string } | null = null;
   private systemChannel = SystemChannel.getInstance();
   private webServer: WebServer | null = null;
 
@@ -79,6 +80,7 @@ export class Runner {
 
     // Give the bridge access to the LLM so it can summarize long agent logs
     WebBridge.getInstanceIfExists()?.setLlm(llm);
+    WebBridge.getInstanceIfExists()?.setLlmModel(config.ollama.textModel);
 
     // 2. Create a working copy of the repo — the original is NEVER modified
     console.log('[runner] Creating working copy of repository...');
@@ -145,7 +147,7 @@ export class Runner {
 
     // 7. Start watchdog
     this.watchdog = new Watchdog(watchdogConfig);
-    this.setupWatchdogHandlers(watchdogConfig, siteMap, llm, reporter, repoReader);
+    this.setupWatchdogHandlers(watchdogConfig, siteMap, llm, reporter, repoReader, devopsAgent);
     this.watchdog.start();
 
     // 8. Spawn coordinators
@@ -266,11 +268,18 @@ export class Runner {
     siteMap: SiteMap,
     llm: OllamaClient,
     reporter: ReporterBridge,
-    repoReader: RepoReader
+    repoReader: RepoReader,
+    devopsAgent: DevOpsAgent
   ): void {
     this.watchdog!.onUnhealthy((status) => {
       const down = status.checks.filter((c) => !c.up).map((c) => c.label).join(', ');
       console.log(`[runner] Site DOWN — ${down}. Pausing all agents...`);
+      const recentOutput = this.serverOutputLines.join('');
+      this.activeCrashIncident = {
+        announcedAt: Date.now(),
+        recentOutput,
+      };
+      devopsAgent.announceCrashIncident(status, recentOutput);
       this.systemChannel.broadcast({
         event: SystemEvent.SiteDown,
         detail: `Server down: ${down}`,
@@ -280,6 +289,10 @@ export class Runner {
 
     this.watchdog!.onHealthy((status) => {
       console.log('[runner] Site UP — resuming all agents...');
+      if (this.activeCrashIncident) {
+        devopsAgent.announceCrashRecovery(status, this.activeCrashIncident.recentOutput);
+        this.activeCrashIncident = null;
+      }
       this.systemChannel.broadcast({
         event: SystemEvent.SiteUp,
         detail: 'Server recovered — resume testing. Be aware the site was recently down.',
@@ -289,6 +302,7 @@ export class Runner {
 
     this.watchdog!.onGiveUp(async (error) => {
       console.error('[runner] Watchdog gave up. Halting agents and running recovery...');
+      this.activeCrashIncident = null;
 
       this.systemChannel.broadcast({ event: SystemEvent.SiteDown, detail: 'Unrecoverable server failure' });
 
