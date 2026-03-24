@@ -63,6 +63,7 @@ export interface OllamaConfig {
   textModel: string;
   visionModel: string;
   timeoutMs: number;
+  maxConcurrentRequests?: number;
 }
 
 export interface AgentCountConfig {
@@ -125,12 +126,14 @@ export interface Route {
   path: string;
   method?: string;
   description?: string;
+  access?: 'public' | 'auth-only' | 'unknown';
 }
 
 export interface SiteMap {
   allowedOrigins: string[];
   routes: Route[];
   entryUrl: string;
+  qaGuidance?: string;
 }
 
 // ─── Messaging ────────────────────────────────────────────────────────────────

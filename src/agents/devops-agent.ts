@@ -763,6 +763,7 @@ export class DevOpsAgent extends BaseAgent {
       const varName = missingVarMatch[1];
       const placeholder = defaultEnvValue(varName);
       const entry = `\n# Added by silly-testers (missing var detected)\n${varName}=${placeholder}\n`;
+      let wroteAny = false;
       // Write to every target dir so monorepo subdirectories also get the value
       for (const dir of envTargetDirs) {
         const ep = path.join(dir, '.env');
@@ -777,8 +778,9 @@ export class DevOpsAgent extends BaseAgent {
         }
         fs.appendFileSync(ep, entry, 'utf8');
         this.log(`Added ${varName} to ${ep} ✓`);
+        wroteAny = true;
       }
-      return { fixApplied: true };
+      return { fixApplied: wroteAny };
     }
 
     // Missing node_modules
@@ -850,6 +852,11 @@ NO_FIX: Cannot determine a safe fix
   Format: NO_FIX
   <reason>
 
+Important constraints:
+- Do NOT suggest FIX_ENV for keys that are already present in Current .env with the same values
+- If the failure does not clearly indicate an environment variable problem, prefer FIX_RUN_COMMAND, FIX_FILE, or NO_FIX
+- Repeating the same no-op fix is worse than returning NO_FIX
+
 Respond with EXACTLY one of the above formats. No preamble.`;
 
     const response = await this.askLLM(prompt);
@@ -895,6 +902,7 @@ Respond with EXACTLY one of the above formats. No preamble.`;
 
         if (varLines.length === 0) return { fixApplied: false };
 
+        let changedAny = false;
         // Apply to every target dir (root + server subdirectory in monorepos)
         for (const dir of envTargetDirs) {
           const envPath = path.join(dir, '.env');
@@ -913,11 +921,16 @@ Respond with EXACTLY one of the above formats. No preamble.`;
               updated += (updated.endsWith('\n') ? '' : '\n') + line.trim() + '\n';
             }
           }
+          if (updated === existing) {
+            this.log(`Skipped FIX_ENV for ${envPath}: values already match`);
+            continue;
+          }
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(envPath, updated, 'utf8');
           this.log(`Applied FIX_ENV to ${envPath}: ${varLines.map(l => l.split('=')[0]).join(', ')}`);
+          changedAny = true;
         }
-        return { fixApplied: true };
+        return { fixApplied: changedAny };
 
       } else if (directive === 'FIX_RUN_COMMAND') {
         const endIdx = lines.findIndex(l => l.trim() === 'END_FIX');
@@ -949,6 +962,14 @@ Respond with EXACTLY one of the above formats. No preamble.`;
         if (rel.startsWith('..')) {
           this.log(`Rejected FIX_FILE outside repo: ${filePath}`);
           return { fixApplied: false };
+        }
+
+        if (fs.existsSync(absPath)) {
+          const existing = fs.readFileSync(absPath, 'utf8');
+          if (existing === content) {
+            this.log(`Skipped FIX_FILE for ${filePath}: content already matches`);
+            return { fixApplied: false };
+          }
         }
 
         fs.mkdirSync(path.dirname(absPath), { recursive: true });
@@ -1046,6 +1067,7 @@ ${currentEnv || '(empty or missing)'}
 
     const healthChecks = await this.discoverHealthChecks();
     const siteMap = await this.buildSiteMap();
+    siteMap.qaGuidance = await this.buildQaGuidance(siteMap.routes);
 
     const watchdogConfig: WatchdogConfig = {
       startCommand: this.startCommand,
@@ -1235,7 +1257,13 @@ ${repoStructure}
     const routePatterns = routeResults
       .map((r) => {
         const match = r.content.match(/['"](\/[^'"]+)['"]/);
-        return match ? { path: match[1], method: undefined, description: r.file } : null;
+        if (!match) return null;
+        return {
+          path: match[1],
+          method: undefined,
+          description: r.file,
+          access: this.inferRouteAccess(match[1], r.content),
+        };
       })
       .filter(Boolean) as Route[];
 
@@ -1248,9 +1276,9 @@ ${repoStructure}
       const liveRoutes: Route[] = links.map((link) => {
         try {
           const { pathname } = new URL(link);
-          return { path: pathname };
+          return { path: pathname, access: this.inferRouteAccess(pathname) };
         } catch {
-          return { path: link };
+          return { path: link, access: this.inferRouteAccess(link) };
         }
       });
       routes.push(...liveRoutes);
@@ -1277,7 +1305,75 @@ ${repoStructure}
       allowedOrigins: [...allowedOrigins],
       routes: uniqueRoutes,
       entryUrl: this.targetUrl,
+      qaGuidance: '',
     };
+  }
+
+  private inferRouteAccess(path: string, evidence = ''): Route['access'] {
+    const signal = `${path} ${evidence}`.toLowerCase();
+    if (/\b(auth|requireauth|protected|session|loggedin|middleware)\b/.test(signal)) {
+      return 'auth-only';
+    }
+    if (/(^|\/)(dashboard|account|settings|profile|billing|checkout|admin|orders|workspace)(\/|$)/.test(signal)) {
+      return 'auth-only';
+    }
+    if (/(^|\/)(login|signin|sign-in|signup|sign-up|register|forgot-password|reset-password)(\/|$)/.test(signal)) {
+      return 'public';
+    }
+    return 'unknown';
+  }
+
+  private async buildQaGuidance(routes: Route[]): Promise<string> {
+    const docs = readDocFiles(this.repoReader).slice(0, 4000) || '(no docs found)';
+    const authSnippets = [
+      ...this.repoReader.searchCode('(auth|login|signup|register|session|passport|nextauth|clerk|supabase)', 'ts'),
+      ...this.repoReader.searchCode('(auth|login|signup|register|session|passport|nextauth|clerk|supabase)', 'js'),
+    ]
+      .slice(0, 12)
+      .map((result) => `${result.file}:${result.line} ${result.content.trim()}`)
+      .join('\n');
+
+    const routeSummary = routes
+      .slice(0, 40)
+      .map((route) => `${route.path}${route.access && route.access !== 'unknown' ? ` [${route.access}]` : ''}`)
+      .join('\n');
+
+    const fallback = [
+      `Base URL: ${this.targetUrl}`,
+      'Protected routes may intentionally return 401/403, redirect to login, or return 404 before authentication.',
+      'QA should create separate accounts per agent when self-serve signup exists and keep credentials in private agent notes.',
+      'Only file access bugs after confirming the current user should be able to reach the page.',
+    ].join('\n');
+
+    try {
+      const prompt = `You are a DevOps engineer preparing a concise handoff for QA testers who need a working local environment.
+
+Target URL: ${this.targetUrl}
+
+Documentation:
+${docs}
+
+Authentication and account clues:
+${authSnippets || '(none found)'}
+
+Route summary:
+${routeSummary || '(none found)'}
+
+Write a brief QA environment handoff in 4-8 short bullet lines.
+It must cover:
+- what URL QA should start from
+- whether testers should expect login-only routes
+- whether 401/403/404 can be expected before auth
+- how QA should obtain accounts if self-serve signup exists
+- any obvious setup gaps or unknowns they should treat as prerequisites instead of bugs
+
+Keep it practical, compact, and written to QA workers directly.`;
+
+      const guidance = (await this.askLLM(prompt)).trim();
+      return guidance || fallback;
+    } catch {
+      return fallback;
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -1334,12 +1430,28 @@ ${repoStructure}
   }
 
   private dedupeRoutes(routes: Route[]): Route[] {
-    const seen = new Set<string>();
-    return routes.filter((r) => {
-      if (seen.has(r.path)) return false;
-      seen.add(r.path);
-      return true;
-    });
+    const deduped = new Map<string, Route>();
+    for (const route of routes) {
+      const existing = deduped.get(route.path);
+      if (!existing) {
+        deduped.set(route.path, route);
+        continue;
+      }
+
+      deduped.set(route.path, {
+        ...existing,
+        ...route,
+        access: existing.access === 'auth-only' || route.access === 'auth-only'
+          ? 'auth-only'
+          : existing.access === 'public' || route.access === 'public'
+            ? 'public'
+            : 'unknown',
+        description: existing.description ?? route.description,
+        method: existing.method ?? route.method,
+      });
+    }
+
+    return [...deduped.values()];
   }
 
   private writeWatchdogConfig(config: WatchdogConfig): void {

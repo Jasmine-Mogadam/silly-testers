@@ -78,6 +78,13 @@ export class Runner {
       console.warn('[runner] Run: ollama pull ' + ollamaHealth.missing.join(' && ollama pull '));
     }
 
+    console.log('[runner] Warming up Ollama text model...');
+    try {
+      await llm.warmup();
+    } catch (err) {
+      console.warn('[runner] Ollama warm-up failed; continuing with normal retries:', (err as Error).message);
+    }
+
     // Give the bridge access to the LLM so it can summarize long agent logs
     WebBridge.getInstanceIfExists()?.setLlm(llm);
     WebBridge.getInstanceIfExists()?.setLlmModel(config.ollama.textModel);
@@ -104,7 +111,12 @@ export class Runner {
 
     // 5. Start server with DevOps-assisted retry loop
     const reporter = new ReporterBridge(this.resolveReportDir());
-    const devopsSiteMap: SiteMap = { allowedOrigins: [this.discovered.url], routes: [], entryUrl: this.discovered.url };
+    const devopsSiteMap: SiteMap = {
+      allowedOrigins: [this.discovered.url],
+      routes: [],
+      entryUrl: this.discovered.url,
+      qaGuidance: '',
+    };
     const { page: devopsPage, context: devopsContext } = await this.browserPool.acquirePage();
 
     const devopsAgent = new DevOpsAgent({

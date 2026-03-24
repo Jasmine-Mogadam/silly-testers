@@ -68,6 +68,9 @@ export class QACoordinator extends BaseCoordinator {
     this.broadcastDirective(
       `QA team active. Testing ${this.features.length} features with ${this.featureTesterCount} testers + ${this.playTesterCount} play testers. Report anything unusual.`
     );
+    if (this.siteMap.qaGuidance?.trim()) {
+      this.broadcastDirective(`DevOps environment briefing for QA:\n${this.siteMap.qaGuidance}`);
+    }
 
     // Coordination loop — monitor findings and post strategic updates
     while (!this.isStopped()) {

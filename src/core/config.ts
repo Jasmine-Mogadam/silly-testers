@@ -13,6 +13,7 @@ const DEFAULTS: Config = {
     textModel: 'llama3.1:8b',
     visionModel: 'llava',
     timeoutMs: 120_000,
+    maxConcurrentRequests: 1,
   },
   agents: {
     qa: {

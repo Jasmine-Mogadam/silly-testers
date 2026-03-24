@@ -20,12 +20,16 @@ export class OllamaClient {
   private textModel: string;
   private visionModel: string;
   private timeoutMs: number;
+  private maxConcurrentRequests: number;
+  private activeRequests = 0;
+  private waitQueue: Array<() => void> = [];
 
   constructor(config: OllamaConfig) {
     this.endpoint = config.endpoint.replace(/\/$/, '');
     this.textModel = config.textModel;
     this.visionModel = config.visionModel;
     this.timeoutMs = config.timeoutMs;
+    this.maxConcurrentRequests = Math.max(1, config.maxConcurrentRequests ?? 1);
   }
 
   /**
@@ -87,90 +91,136 @@ export class OllamaClient {
     }
   }
 
+  /**
+   * Preload the configured text model before many agents begin prompting at once.
+   */
+  async warmup(): Promise<void> {
+    const body: Record<string, unknown> = {
+      model: this.textModel,
+      prompt: 'Reply with OK.',
+      stream: false,
+      keep_alive: '30m',
+      options: {
+        temperature: 0,
+        num_predict: 8,
+      },
+    };
+
+    await this.request('/api/generate', body, 'warmup');
+  }
+
   private async request(
     path: string,
     body: Record<string, unknown>,
     operation: string,
     onRetryUpdate?: (event: RetryUpdate) => void,
   ): Promise<string> {
+    await this.acquireSlot();
     const url = `${this.endpoint}${path}`;
     let lastError: Error | undefined;
     let lastFailureDetails = '';
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const startedAt = Date.now();
-      let timedOut = false;
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const startedAt = Date.now();
+        let timedOut = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
 
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => {
-          timedOut = true;
-          controller.abort();
-        }, this.timeoutMs);
+        try {
+          const controller = new AbortController();
+          timer = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, this.timeoutMs);
 
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timer);
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Ollama HTTP ${res.status}: ${text}`);
-        }
-
-        const data = (await res.json()) as { response: string };
-        if (attempt > 0) {
-          onRetryUpdate?.({
-            state: 'succeeded',
-            attempt: attempt + 1,
-            total: 3,
-            operation,
-            details: `Recovered after ${attempt + 1} attempts. operation=${operation}, model=${String(body.model ?? 'unknown')}, endpoint=${path}, elapsed=${Date.now() - startedAt}ms`,
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              keep_alive: '30m',
+              ...body,
+            }),
+            signal: controller.signal,
           });
-        }
-        return data.response.trim();
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        lastFailureDetails = this.describeFailure(lastError, {
-          operation,
-          path,
-          model: String(body.model ?? 'unknown'),
-          timeoutMs: this.timeoutMs,
-          elapsedMs: Date.now() - startedAt,
-          promptPreview: this.buildPromptPreview(body),
-          imageCount: Array.isArray(body.images) ? body.images.length : 0,
-          timedOut,
-        });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Ollama HTTP ${res.status}: ${text}`);
+          }
 
-        if (attempt < 2) {
-          onRetryUpdate?.({
-            state: 'retrying',
-            attempt: attempt + 2,
-            total: 3,
+          const data = (await res.json()) as { response: string };
+          if (attempt > 0) {
+            onRetryUpdate?.({
+              state: 'succeeded',
+              attempt: attempt + 1,
+              total: 3,
+              operation,
+              details: `Recovered after ${attempt + 1} attempts. operation=${operation}, model=${String(body.model ?? 'unknown')}, endpoint=${path}, elapsed=${Date.now() - startedAt}ms`,
+            });
+          }
+          return data.response.trim();
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          lastFailureDetails = this.describeFailure(lastError, {
             operation,
-            details: lastFailureDetails,
+            path,
+            model: String(body.model ?? 'unknown'),
+            timeoutMs: this.timeoutMs,
+            elapsedMs: Date.now() - startedAt,
+            promptPreview: this.buildPromptPreview(body),
+            imageCount: Array.isArray(body.images) ? body.images.length : 0,
+            timedOut,
           });
-        } else {
-          onRetryUpdate?.({
-            state: 'failed',
-            attempt: 3,
-            total: 3,
-            operation,
-            details: lastFailureDetails,
-          });
-        }
 
-        if (attempt < 2) {
-          await sleep(1_000 * (attempt + 1));
+          if (attempt < 2) {
+            onRetryUpdate?.({
+              state: 'retrying',
+              attempt: attempt + 2,
+              total: 3,
+              operation,
+              details: lastFailureDetails,
+            });
+          } else {
+            onRetryUpdate?.({
+              state: 'failed',
+              attempt: 3,
+              total: 3,
+              operation,
+              details: lastFailureDetails,
+            });
+          }
+
+          if (attempt < 2) {
+            await sleep(1_000 * (attempt + 1));
+          }
+        } finally {
+          if (timer) clearTimeout(timer);
         }
       }
+    } finally {
+      this.releaseSlot();
     }
 
     throw new Error(`Ollama request failed after 3 attempts. ${lastFailureDetails || lastError?.message}`);
+  }
+
+  private async acquireSlot(): Promise<void> {
+    if (this.activeRequests < this.maxConcurrentRequests) {
+      this.activeRequests += 1;
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.waitQueue.push(() => {
+        this.activeRequests += 1;
+        resolve();
+      });
+    });
+  }
+
+  private releaseSlot(): void {
+    this.activeRequests = Math.max(0, this.activeRequests - 1);
+    const next = this.waitQueue.shift();
+    next?.();
   }
 
   private buildPromptPreview(body: Record<string, unknown>): string {

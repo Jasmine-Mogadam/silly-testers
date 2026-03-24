@@ -58,6 +58,7 @@ export abstract class BaseAgent {
   private pausePromise: Promise<void> | null = null;
   private pauseResolve: (() => void) | null = null;
   private unsubscribeSystem: (() => void) | null = null;
+  private privateNotes = new Map<string, string>();
   constructor(deps: AgentDeps) {
     this.id = deps.id;
     this.team = deps.team;
@@ -77,15 +78,16 @@ export abstract class BaseAgent {
   // ─── Browser ────────────────────────────────────────────────────────────────
 
   protected async navigate(url: string): Promise<boolean> {
-    if (!this.isAllowedUrl(url)) {
+    const resolvedUrl = this.resolveUrl(url);
+    if (!resolvedUrl || !this.isAllowedUrl(resolvedUrl)) {
       this.log(`Blocked navigation to disallowed URL: ${url}`);
       return false;
     }
     try {
-      await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+      await this.page.goto(resolvedUrl, { waitUntil: 'domcontentloaded' });
       return true;
     } catch (err) {
-      this.log(`Navigation failed to ${url}: ${(err as Error).message}`);
+      this.log(`Navigation failed to ${resolvedUrl}: ${(err as Error).message}`);
       return false;
     }
   }
@@ -157,6 +159,22 @@ export abstract class BaseAgent {
     const msgs = this.teamChannel.getHistory(limit);
     if (msgs.length === 0) return '(no messages yet)';
     return msgs.map((m) => `[${m.from}] ${m.content}`).join('\n');
+  }
+
+  protected savePrivateNote(key: string, value: string): void {
+    const normalizedKey = key.trim().slice(0, 80);
+    const normalizedValue = value.trim().replace(/\s+/g, ' ').slice(0, 200);
+    if (!normalizedKey || !normalizedValue) return;
+    this.privateNotes.set(normalizedKey, normalizedValue);
+    this.log(`Saved private note: ${normalizedKey}`);
+  }
+
+  protected getPrivateNotesSummary(): string {
+    if (this.privateNotes.size === 0) return '(none)';
+    return [...this.privateNotes.entries()]
+      .slice(-10)
+      .map(([key, value]) => `- ${key}: ${value}`)
+      .join('\n');
   }
 
   // ─── Reporting ───────────────────────────────────────────────────────────────
@@ -364,6 +382,17 @@ export abstract class BaseAgent {
     }
   }
 
+  protected resolveUrl(url: string): string | null {
+    const trimmed = url.trim();
+    if (!trimmed) return null;
+
+    try {
+      return new URL(trimmed, this.siteMap.entryUrl).toString();
+    } catch {
+      return null;
+    }
+  }
+
   protected sendImageToTeam(imageBase64: string, caption: string, tags?: string[]): void {
     this.teamChannel.post(this.id, caption, tags, imageBase64);
   }
@@ -383,7 +412,8 @@ export abstract class BaseAgent {
       if (!bridge) return;
 
       if (event.state === 'retrying' || event.state === 'failed') {
-        history.push(`Attempt ${event.attempt - 1}/${event.total} failed\n${event.details}`);
+        const failedAttempt = event.state === 'failed' ? event.attempt : event.attempt - 1;
+        history.push(`Attempt ${failedAttempt}/${event.total} failed\n${event.details}`);
       } else {
         history.push(`Succeeded on attempt ${event.attempt}/${event.total}`);
       }

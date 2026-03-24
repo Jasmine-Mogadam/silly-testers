@@ -129,6 +129,7 @@ web:
 1. **DevOps agent** reads your repo (static analysis, no browser) to discover the start command and URL — checks `package.json` scripts, framework configs, `.env` files, and asks the LLM if needed
 2. Target server is started using the discovered command
 3. **DevOps agent** (browser phase) crawls the live site to build a SiteMap and auto-configure the health monitor
+   It also prepares a short QA environment handoff so testers know which routes are likely auth-gated, whether they should create their own accounts, and what setup gaps are prerequisites rather than bugs
 4. **Watchdog** begins polling all detected services (frontend + backend separately if applicable)
 5. **QA** and **Red Team** coordinators spawn their workers
 
@@ -137,8 +138,8 @@ web:
 | Agent | Role |
 |---|---|
 | QA Coordinator | Distributes features, adapts strategy based on findings |
-| Feature Tester | Tests a set of features from your list — happy path, edge cases, error handling |
-| Play Tester | Gets random user goals and explores freely (e.g., "try to post content", "find account settings") |
+| Feature Tester | Tests a set of features from your list — happy path, edge cases, error handling, while using the DevOps QA handoff to avoid mislabeling auth-gated pages as bugs |
+| Play Tester | Gets random user goals and explores freely (e.g., "try to post content", "find account settings"), keeping any unique account credentials in private per-agent notes instead of team chat |
 
 ### Red Team
 

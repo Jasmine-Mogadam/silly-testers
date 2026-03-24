@@ -61,6 +61,10 @@ export class PlayTester extends BaseAgent {
 
 Site entry URL: ${this.siteMap.entryUrl}
 Known routes: ${this.siteMap.routes.map((r) => r.path).join(', ')}
+QA environment guidance:
+${this.siteMap.qaGuidance ?? '(none provided)'}
+Your private notes:
+${this.getPrivateNotesSummary()}
 Recently visited: ${visitedList || 'nothing yet'}
 Recent team findings: ${recentTeamMessages}
 
@@ -71,6 +75,8 @@ Make it specific and actionable. Examples:
 - "Search for content and open a result"
 - "Try to post or create some content"
 - "Navigate to checkout or payment area"
+
+Some areas may be intentionally auth-gated, so goals can include signing up, logging in, or using an existing session first.
 
 Respond with ONLY the goal, one sentence, no preamble.`;
 
@@ -97,15 +103,24 @@ Available links:
 ${links.slice(0, 15).join('\n')}
 
 Actions taken on this goal so far: ${this.actionsOnCurrentGoal}
+QA environment guidance:
+${this.siteMap.qaGuidance ?? '(none provided)'}
+Your private notes:
+${this.getPrivateNotesSummary()}
 
 Choose ONE action to take next. Use one of these formats:
 - NAVIGATE: <url>
 - CLICK: <text or description of element>
 - TYPE: <css-selector> | <text>
+- STORE_NOTE: <label> | <value to remember privately, such as email/password/token>
 - ANALYZE_VISUAL: <question about the page>
 - REPORT_UX: <title> | <severity: High/Medium/Low> | <description of UX issue>
 - GOAL_DONE: <brief summary of what happened>
 - GOAL_ABANDON: <reason>
+
+Important:
+- Login-only or account-only pages are expected in many apps. A redirect, 401/403, or even 404 before login is not automatically a UX bug.
+- If you create an account or get unique credentials, store them privately instead of posting them to the team channel.
 
 Respond with ONE action only.`;
 
@@ -118,8 +133,7 @@ Respond with ONE action only.`;
   private async executeAction(action: string, pageContent: string): Promise<void> {
     if (action.startsWith('NAVIGATE:')) {
       const url = action.slice(9).trim();
-      const full = url.startsWith('http') ? url : `${this.siteMap.entryUrl}${url}`;
-      await this.navigate(full);
+      await this.navigate(url);
 
     } else if (action.startsWith('CLICK:')) {
       const desc = action.slice(6).trim();
@@ -129,6 +143,12 @@ Respond with ONE action only.`;
       const parts = action.slice(5).split('|');
       if (parts.length >= 2) {
         await this.page.fill(parts[0].trim(), parts[1].trim()).catch(() => {});
+      }
+
+    } else if (action.startsWith('STORE_NOTE:')) {
+      const parts = action.slice(11).split('|');
+      if (parts.length >= 2) {
+        this.savePrivateNote(parts[0].trim(), parts.slice(1).join('|').trim());
       }
 
     } else if (action.startsWith('ANALYZE_VISUAL:')) {

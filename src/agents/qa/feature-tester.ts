@@ -54,6 +54,13 @@ export class FeatureTester extends BaseAgent {
   private async planTests(): Promise<string> {
     const repoStructure = this.repoReader.getStructure(2);
     const teamHistory = this.getTeamHistory(10);
+    const routeSummary = this.siteMap.routes
+      .map((route) => {
+        const access = route.access && route.access !== 'unknown' ? ` [${route.access}]` : '';
+        const description = route.description ? ` - ${route.description}` : '';
+        return `  ${route.method ?? 'GET'} ${route.path}${access}${description}`;
+      })
+      .join('\n');
 
     const prompt = `You are a QA tester for a web application.
 
@@ -67,12 +74,19 @@ ${teamHistory}
 
 The site is at: ${this.siteMap.entryUrl}
 Known routes:
-${this.siteMap.routes.map((r) => `  ${r.method ?? 'GET'} ${r.path}${r.description ? ' — ' + r.description : ''}`).join('\n')}
+${routeSummary}
+
+QA environment guidance:
+${this.siteMap.qaGuidance ?? '(none provided)'}
 
 Write a concise test plan (3-5 steps) to verify this feature works correctly. Focus on:
 1. Happy path (normal expected usage)
 2. Edge cases (empty input, invalid data, boundary values)
 3. Error handling (what happens when something goes wrong)
+
+Important:
+- Some routes may be intentionally login-only and may redirect, return 401/403, or even return 404 before authentication. That alone is not a bug.
+- Treat auth-gated access as a bug only when the user should already have access at that point, or when the app contradicts its intended flow.
 
 Respond with numbered steps only, no preamble.`;
 
@@ -95,14 +109,25 @@ ${pageContent}
 Available links on this page:
 ${(await this.getPageLinks()).join('\n')}
 
+QA environment guidance:
+${this.siteMap.qaGuidance ?? '(none provided)'}
+
+Your private notes:
+${this.getPrivateNotesSummary()}
+
 Describe exactly what browser actions to take next to test this feature.
 For each action, use one of these formats:
 - NAVIGATE: <url>
 - CLICK: <description of element to click>
 - TYPE: <css-selector> | <text to type>
+- STORE_NOTE: <label> | <value to remember privately, such as email/password/token>
 - SCREENSHOT: <reason>
 - REPORT_BUG: <title> | <severity: Critical/High/Medium/Low> | <description>
 - DONE: <summary of what was tested>
+
+Important:
+- If a page appears protected, try to authenticate or create an account before treating it as broken.
+- Do not report a 401/403/404 on a likely protected route as a bug unless the app flow says the current user should already be allowed through.
 
 Respond with one action per line.`;
 
@@ -119,7 +144,7 @@ Respond with one action per line.`;
 
       if (line.startsWith('NAVIGATE:')) {
         const url = line.slice(9).trim();
-        await this.navigate(url.startsWith('http') ? url : `${this.siteMap.entryUrl}${url}`);
+        await this.navigate(url);
 
       } else if (line.startsWith('CLICK:')) {
         const desc = line.slice(6).trim();
@@ -133,6 +158,12 @@ Respond with one action per line.`;
           await this.page.fill(selector, text).catch(() => {
             this.log(`TYPE failed for selector: ${selector}`);
           });
+        }
+
+      } else if (line.startsWith('STORE_NOTE:')) {
+        const parts = line.slice(11).split('|');
+        if (parts.length >= 2) {
+          this.savePrivateNote(parts[0].trim(), parts.slice(1).join('|').trim());
         }
 
       } else if (line.startsWith('SCREENSHOT:')) {
