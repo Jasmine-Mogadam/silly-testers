@@ -143,6 +143,38 @@ export abstract class BaseCoordinator extends BaseAgent {
     return messages.map((message) => `[${message.from}] ${message.content}`).join('\n');
   }
 
+  protected parseDirectiveResponse(response: string): string | null {
+    const trimmed = response.trim();
+    if (!trimmed) return null;
+
+    const normalized = trimmed
+      .toUpperCase()
+      .replace(/[\s:_-]+/g, '');
+
+    if (normalized === 'NODIRECTIVE' || normalized.includes('NODIRECTIVE')) {
+      return null;
+    }
+
+    if (/\b(let me know|i can help|here are|potential directives|guidance on how to proceed)\b/i.test(trimmed)) {
+      this.log(`Discarding non-directive coordinator response: ${trimmed}`);
+      return null;
+    }
+
+    const firstMeaningfulLine = trimmed
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean);
+
+    if (!firstMeaningfulLine) return null;
+
+    const cleaned = firstMeaningfulLine
+      .replace(/^\[COORDINATOR\]\s*/i, '')
+      .replace(/^[-*]\s*/, '')
+      .trim();
+
+    return cleaned || null;
+  }
+
   private normalizeDirective(message: string): string {
     return message
       .toLowerCase()

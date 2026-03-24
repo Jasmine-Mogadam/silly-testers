@@ -104,6 +104,8 @@ A live Slack-style interface starts automatically at **`http://localhost:4242`**
 | **# reports** | Every filed report as a card — click to read the full markdown |
 | **Direct Messages** | Per-agent action log (everything that agent thinks and does) |
 
+DMs now include periodic model-wait heartbeats during long LLM calls, and worker crashes are logged into the worker's own DM so a sudden "starting..." then silence is easier to diagnose.
+
 ### Features
 
 - Each agent gets a fun **adjective-animal name** (e.g. `sneaky-axolotl`, `frantic-quokka`) with a unique color and emoji avatar — assigned randomly at startup
@@ -141,13 +143,17 @@ web:
 | Feature Tester | Tests a set of features from your list — happy path, edge cases, error handling, while using the DevOps QA handoff to avoid mislabeling auth-gated pages as bugs |
 | Play Tester | Gets random user goals and explores freely (e.g., "try to post content", "find account settings"), keeping any unique account credentials in private per-agent notes instead of team chat |
 
+QA coordinator routine messages are intentionally sparse: it should only interrupt when testers are blocked, duplicating work, or need a re-test / focus shift. If there is no useful directive that round, it stays silent.
+
 ### Red Team
 
 | Agent | Role |
 |---|---|
 | Red Coordinator | Tracks attack surface, prioritizes targets, avoids duplicate attempts |
-| Recon Agent | Reads source code for routes/auth/validation gaps, crawls the live site |
+| Recon Agent | Reads source code for routes/auth/validation gaps, crawls the live site, then goes dormant until the team needs more discovery |
 | Exploit Agent | Attempts specific exploits (XSS, SQLi, IDOR, auth bypass, etc.) based on recon |
+
+Red coordinator routine messages are also intentionally sparse: it should only speak when priority or de-confliction changes, otherwise it stays silent. Recon likewise avoids periodic "no-op" updates and only posts when it has net-new findings.
 
 ### Communication rules
 

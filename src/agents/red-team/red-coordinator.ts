@@ -99,6 +99,11 @@ export class RedCoordinator extends BaseCoordinator {
 Recent messages:
 ${recentMessages}
 
+Your job is coordination only.
+- You are not writing exploit steps for humans unless it changes team priority.
+- You are not offering general security advice.
+- You only steer red-team workers toward priority targets, de-duplication, confirmation, and unblockers.
+
 Only interrupt the team if coordination is actually needed right now.
 Good reasons to speak:
 - an agent explicitly asks a question or signals it is blocked
@@ -110,8 +115,8 @@ If no interruption is needed, respond exactly with: NO_DIRECTIVE
 Otherwise write ONE strategic directive sentence.
 Focus on prioritizing high-value targets, avoiding redundant attempts, and coordinating attacks.`;
 
-    const directive = (await this.askLLM(prompt)).trim();
-    if (!directive || directive === 'NO_DIRECTIVE') return;
+    const directive = this.parseDirectiveResponse(await this.askLLM(prompt));
+    if (!directive) return;
     this.broadcastDirective(directive);
   }
 
@@ -208,7 +213,10 @@ FEEDBACK: <one concise sentence>`;
     });
 
     this.registerWorker(agent);
-    agent.run().catch((err) => this.log(`ReconAgent ${workerId} error: ${err.message}`));
+    agent.run().catch((err) => {
+      agent.recordCrash(err, 'ReconAgent crashed');
+      this.log(`ReconAgent ${workerId} error: ${err instanceof Error ? err.message : String(err)}`);
+    });
   }
 
   private async spawnExploitAgent(): Promise<void> {
@@ -229,7 +237,10 @@ FEEDBACK: <one concise sentence>`;
     });
 
     this.registerWorker(agent);
-    agent.run().catch((err) => this.log(`ExploitAgent ${workerId} error: ${err.message}`));
+    agent.run().catch((err) => {
+      agent.recordCrash(err, 'ExploitAgent crashed');
+      this.log(`ExploitAgent ${workerId} error: ${err instanceof Error ? err.message : String(err)}`);
+    });
   }
 }
 

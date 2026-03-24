@@ -112,7 +112,13 @@ export class QACoordinator extends BaseCoordinator {
 
 ${recentMessages}
 
-Only respond if the team truly needs guidance right now.
+Your job is coordination only.
+- You are not implementing features.
+- You are not writing product guidance for humans.
+- You are not summarizing docs or offering general help.
+- You only steer QA workers toward testing coverage, de-duplication, re-tests, and unblockers.
+
+Only respond if the QA team truly needs guidance right now.
 Good reasons to interrupt:
 - someone explicitly asked a question or seems blocked
 - multiple testers surfaced overlapping behavior that should be coordinated
@@ -120,10 +126,12 @@ Good reasons to interrupt:
 
 If no interruption is needed, respond exactly with: NO_DIRECTIVE
 
-Otherwise write ONE concise directive sentence about what to focus on, what to watch for, or what to re-test.`;
+Otherwise write ONE concise directive sentence addressed to QA testers.
+It must be about testing focus, coverage, de-duplication, validation, or re-testing.
+Do not mention implementation, coding, product planning, or "let me know".`;
 
-    const directive = (await this.askLLM(prompt)).trim();
-    if (!directive || directive === 'NO_DIRECTIVE') return;
+    const directive = this.parseDirectiveResponse(await this.askLLM(prompt));
+    if (!directive) return;
     this.broadcastDirective(directive);
   }
 
@@ -221,7 +229,10 @@ FEEDBACK: <one concise sentence>`;
     });
 
     this.registerWorker(tester);
-    tester.run().catch((err) => this.log(`FeatureTester ${workerId} error: ${err.message}`));
+    tester.run().catch((err) => {
+      tester.recordCrash(err, 'FeatureTester crashed');
+      this.log(`FeatureTester ${workerId} error: ${err instanceof Error ? err.message : String(err)}`);
+    });
   }
 
   private async spawnPlayTester(): Promise<void> {
@@ -243,7 +254,10 @@ FEEDBACK: <one concise sentence>`;
     });
 
     this.registerWorker(tester);
-    tester.run().catch((err) => this.log(`PlayTester ${workerId} error: ${err.message}`));
+    tester.run().catch((err) => {
+      tester.recordCrash(err, 'PlayTester crashed');
+      this.log(`PlayTester ${workerId} error: ${err instanceof Error ? err.message : String(err)}`);
+    });
   }
 
   private parseFeatureList(): string[] {

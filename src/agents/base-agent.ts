@@ -135,18 +135,30 @@ export abstract class BaseAgent {
   // ─── LLM ────────────────────────────────────────────────────────────────────
 
   protected async askLLM(prompt: string, system?: string): Promise<string> {
-    const onRetryUpdate = this.createRetryHandler();
-    return this.llm.complete(prompt, {
-      system,
-      onRetryUpdate,
-    });
+    return this.withProgressHeartbeat(
+      'Waiting for text model response...',
+      () => {
+        const onRetryUpdate = this.createRetryHandler();
+        return this.llm.complete(prompt, {
+          system,
+          onRetryUpdate,
+        });
+      },
+      'Text model response received.',
+    );
   }
 
   protected async askVision(imageBase64: string, prompt: string): Promise<string> {
-    const onRetryUpdate = this.createRetryHandler();
-    return this.llm.vision(imageBase64, prompt, {
-      onRetryUpdate,
-    });
+    return this.withProgressHeartbeat(
+      'Waiting for vision model response...',
+      () => {
+        const onRetryUpdate = this.createRetryHandler();
+        return this.llm.vision(imageBase64, prompt, {
+          onRetryUpdate,
+        });
+      },
+      'Vision model response received.',
+    );
   }
 
   // ─── Team Communication ──────────────────────────────────────────────────────
@@ -403,6 +415,12 @@ export abstract class BaseAgent {
     WebBridge.getInstanceIfExists()?.agentLog(this.id, message);
   }
 
+  public recordCrash(err: unknown, context = 'Agent crashed unexpectedly'): void {
+    const message = err instanceof Error ? err.message : String(err);
+    this.log(`${context}: ${message}`);
+    this.stop();
+  }
+
   private createRetryHandler(): (event: RetryUpdate) => void {
     const retryLogId = `${this.id}:llm-retry:${randomUUID()}`;
     const history: string[] = [];
@@ -433,6 +451,33 @@ export abstract class BaseAgent {
         summarizing: false,
       });
     };
+  }
+
+  private async withProgressHeartbeat<T>(
+    waitingMessage: string,
+    work: () => Promise<T>,
+    successMessage: string,
+  ): Promise<T> {
+    this.log(waitingMessage);
+
+    let finished = false;
+    const interval = setInterval(() => {
+      if (!finished) {
+        this.log(waitingMessage);
+      }
+    }, 30_000);
+
+    try {
+      const result = await work();
+      finished = true;
+      clearInterval(interval);
+      this.log(successMessage);
+      return result;
+    } catch (err) {
+      finished = true;
+      clearInterval(interval);
+      throw err;
+    }
   }
 }
 
