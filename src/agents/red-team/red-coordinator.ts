@@ -63,12 +63,16 @@ export class RedCoordinator extends BaseCoordinator {
       await this.checkPaused();
       if (this.isStopped()) break;
 
-      await this.reviewPendingDrafts();
-      await sleep(10_000);
-
-      if (!this.isStopped()) {
-        await this.reviewAndDirectAttack();
+      try {
+        await this.reviewPendingDrafts();
+        if (!this.isStopped()) {
+          await this.reviewAndDirectAttack();
+        }
+      } catch (err) {
+        this.log(`Coordinator review cycle failed: ${(err as Error).message}`);
       }
+
+      await sleep(5_000);
     }
 
     await this.stopAllWorkers();
@@ -84,19 +88,30 @@ export class RedCoordinator extends BaseCoordinator {
   }
 
   private async reviewAndDirectAttack(): Promise<void> {
-    const recentMessages = this.getTeamHistory(30);
-    if (!recentMessages) return;
+    const newMessages = this.getNewWorkerMessages();
+    if (!this.shouldIssueDirective(newMessages)) return;
+
+    this.markDirectiveInputsSeen(newMessages);
+    const recentMessages = this.formatMessagesForPrompt(newMessages);
 
     const prompt = `You are the Red Team coordinator reviewing team findings.
 
 Recent messages:
 ${recentMessages}
 
-Based on these findings, write ONE strategic directive for the team.
-Focus on: prioritizing high-value targets, avoiding redundant attempts, coordinating attacks.
-Keep it to one sentence.`;
+Only interrupt the team if coordination is actually needed right now.
+Good reasons to speak:
+- an agent explicitly asks a question or signals it is blocked
+- multiple agents are converging on the same target or duplicating work
+- a fresh finding changes attack priority for the rest of the team
 
-    const directive = await this.askLLM(prompt);
+If no interruption is needed, respond exactly with: NO_DIRECTIVE
+
+Otherwise write ONE strategic directive sentence.
+Focus on prioritizing high-value targets, avoiding redundant attempts, and coordinating attacks.`;
+
+    const directive = (await this.askLLM(prompt)).trim();
+    if (!directive || directive === 'NO_DIRECTIVE') return;
     this.broadcastDirective(directive);
   }
 

@@ -74,12 +74,16 @@ export class QACoordinator extends BaseCoordinator {
       await this.checkPaused();
       if (this.isStopped()) break;
 
-      await this.reviewPendingDrafts();
-      await sleep(10_000);
-
-      if (!this.isStopped()) {
-        await this.reviewAndAdapt();
+      try {
+        await this.reviewPendingDrafts();
+        if (!this.isStopped()) {
+          await this.reviewAndAdapt();
+        }
+      } catch (err) {
+        this.log(`Coordinator review cycle failed: ${(err as Error).message}`);
       }
+
+      await sleep(5_000);
     }
 
     await this.stopAllWorkers();
@@ -95,16 +99,28 @@ export class QACoordinator extends BaseCoordinator {
   }
 
   private async reviewAndAdapt(): Promise<void> {
-    const recentMessages = this.getTeamHistory(20);
-    if (!recentMessages.includes('report')) return;
+    const newMessages = this.getNewWorkerMessages();
+    if (!this.shouldIssueDirective(newMessages)) return;
+
+    this.markDirectiveInputsSeen(newMessages);
+    const recentMessages = this.formatMessagesForPrompt(newMessages);
 
     const prompt = `You are the QA coordinator. Here are recent messages from your team:
 
 ${recentMessages}
 
-Based on these findings, write ONE directive for the team (what to focus on, what to watch for, or what to re-test). Keep it concise — one sentence.`;
+Only respond if the team truly needs guidance right now.
+Good reasons to interrupt:
+- someone explicitly asked a question or seems blocked
+- multiple testers surfaced overlapping behavior that should be coordinated
+- a fresh reviewed finding clearly changes what others should re-test
 
-    const directive = await this.askLLM(prompt);
+If no interruption is needed, respond exactly with: NO_DIRECTIVE
+
+Otherwise write ONE concise directive sentence about what to focus on, what to watch for, or what to re-test.`;
+
+    const directive = (await this.askLLM(prompt)).trim();
+    if (!directive || directive === 'NO_DIRECTIVE') return;
     this.broadcastDirective(directive);
   }
 

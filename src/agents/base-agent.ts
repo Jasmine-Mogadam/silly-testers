@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from 'playwright';
 import { randomUUID } from 'crypto';
-import type { OllamaClient } from '../core/llm';
+import type { OllamaClient, RetryUpdate } from '../core/llm';
 import type { TeamChannel, SystemChannel } from '../core/channel';
 import type { Reporter } from '../core/reporter';
 import type { RepoReader } from '../core/repo-reader';
@@ -58,7 +58,6 @@ export abstract class BaseAgent {
   private pausePromise: Promise<void> | null = null;
   private pauseResolve: (() => void) | null = null;
   private unsubscribeSystem: (() => void) | null = null;
-
   constructor(deps: AgentDeps) {
     this.id = deps.id;
     this.team = deps.team;
@@ -134,11 +133,18 @@ export abstract class BaseAgent {
   // ─── LLM ────────────────────────────────────────────────────────────────────
 
   protected async askLLM(prompt: string, system?: string): Promise<string> {
-    return this.llm.complete(prompt, { system });
+    const onRetryUpdate = this.createRetryHandler();
+    return this.llm.complete(prompt, {
+      system,
+      onRetryUpdate,
+    });
   }
 
   protected async askVision(imageBase64: string, prompt: string): Promise<string> {
-    return this.llm.vision(imageBase64, prompt);
+    const onRetryUpdate = this.createRetryHandler();
+    return this.llm.vision(imageBase64, prompt, {
+      onRetryUpdate,
+    });
   }
 
   // ─── Team Communication ──────────────────────────────────────────────────────
@@ -366,6 +372,37 @@ export abstract class BaseAgent {
     const prefix = `[${new Date().toISOString().slice(11, 19)}][${this.team}/${this.id}]`;
     console.log(`${prefix} ${message}`);
     WebBridge.getInstanceIfExists()?.agentLog(this.id, message);
+  }
+
+  private createRetryHandler(): (event: RetryUpdate) => void {
+    const retryLogId = `${this.id}:llm-retry:${randomUUID()}`;
+    const history: string[] = [];
+
+    return (event: RetryUpdate) => {
+      const bridge = WebBridge.getInstanceIfExists();
+      if (!bridge) return;
+
+      if (event.state === 'retrying' || event.state === 'failed') {
+        history.push(`Attempt ${event.attempt - 1}/${event.total} failed\n${event.details}`);
+      } else {
+        history.push(`Succeeded on attempt ${event.attempt}/${event.total}`);
+      }
+
+      const statusLine = event.state === 'retrying'
+        ? `Retrying ${event.operation}`
+        : event.state === 'succeeded'
+          ? `${event.operation} recovered`
+          : `${event.operation} failed`;
+
+      bridge.agentLog(this.id, statusLine, {
+        id: retryLogId,
+        retryCurrent: event.attempt,
+        retryTotal: event.total,
+        retryState: event.state,
+        fullText: history.join('\n\n'),
+        summarizing: false,
+      });
+    };
   }
 }
 

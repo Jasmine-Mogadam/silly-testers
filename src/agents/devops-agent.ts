@@ -46,6 +46,71 @@ function readDocFiles(reader: RepoReader): string {
   return sections.join('\n\n');
 }
 
+function collectFrontendEvidence(reader: RepoReader): {
+  hasFrontend: boolean;
+  preferredPort?: string;
+  notes: string[];
+} {
+  const notes: string[] = [];
+  const frontendDeps = new Set([
+    'vite', 'react', 'react-dom', 'vue', 'svelte', '@sveltejs/kit', 'next', 'astro',
+    '@vitejs/plugin-react', '@vitejs/plugin-vue',
+  ]);
+  const candidatePorts = new Map<string, string>();
+
+  const packageFiles = ['package.json', ...reader.searchCode('"scripts"')
+    .map((r) => r.file)
+    .filter((f) => f.endsWith('package.json') && f !== 'package.json')
+    .slice(0, 8)];
+
+  for (const pkgFile of [...new Set(packageFiles)]) {
+    if (!reader.exists(pkgFile)) continue;
+    try {
+      const pkg = JSON.parse(reader.readFile(pkgFile));
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      const foundFrontendDeps = Object.keys(deps).filter((dep) => frontendDeps.has(dep));
+      if (foundFrontendDeps.length > 0) {
+        notes.push(`${pkgFile} frontend deps: ${foundFrontendDeps.join(', ')}`);
+      }
+
+      const scripts = pkg.scripts ?? {};
+      for (const [name, script] of Object.entries<string>(scripts)) {
+        const portMatch = script.match(/(?:--port|\bPORT=)\s*(\d{3,5})/i);
+        if (portMatch) {
+          candidatePorts.set(portMatch[1], `${pkgFile} script "${name}"`);
+        } else if (/\bvite\b/i.test(script)) {
+          candidatePorts.set('5173', `${pkgFile} script "${name}" (Vite default)`);
+        }
+      }
+    } catch {
+      // ignore malformed package.json
+    }
+  }
+
+  for (const cfgFile of ['vite.config.ts', 'vite.config.js', 'vite.config.mts']) {
+    if (!reader.exists(cfgFile)) continue;
+    try {
+      const content = reader.readFile(cfgFile);
+      const portMatch = content.match(/port:\s*(\d{3,5})/);
+      candidatePorts.set(portMatch?.[1] ?? '5173', `${cfgFile}${portMatch ? '' : ' (default port inferred)'}`);
+      notes.push(`Frontend config found: ${cfgFile}`);
+    } catch {
+      candidatePorts.set('5173', `${cfgFile} (default port inferred)`);
+    }
+  }
+
+  const hasFrontend = notes.length > 0 || candidatePorts.size > 0;
+  const preferredPort = candidatePorts.has('5173')
+    ? '5173'
+    : Array.from(candidatePorts.keys())[0];
+
+  if (candidatePorts.size > 0) {
+    notes.push(`Frontend ports: ${Array.from(candidatePorts.entries()).map(([port, source]) => `${port} from ${source}`).join('; ')}`);
+  }
+
+  return { hasFrontend, preferredPort, notes };
+}
+
 // ─── Static Discovery (runs before server starts, no browser) ─────────────────
 
 /**
@@ -69,6 +134,7 @@ export async function discoverTargetConfig(
 
   // Collect evidence from the repo
   const evidence: string[] = [];
+  const frontendEvidence = collectFrontendEvidence(reader);
 
   // Documentation files first — most reliable source of setup instructions
   const docs = readDocFiles(reader);
@@ -137,6 +203,10 @@ export async function discoverTargetConfig(
     }
   }
 
+  if (frontendEvidence.notes.length > 0) {
+    evidence.push(`Frontend UI evidence:\n${frontendEvidence.notes.join('\n')}`);
+  }
+
   const prompt = `You are a DevOps engineer. Analyze this repository to determine exactly how to start the HTTP web server for development testing.
 
 Evidence:
@@ -144,16 +214,18 @@ ${evidence.join('\n\n---\n\n')}
 
 Determine:
 1. The exact shell command to start the HTTP development server
-2. The HTTP URL where the web UI will be accessible (NOT a database URL)
+2. The HTTP URL where the browser-based web UI will be accessible (NOT a database URL)
 
 Critical rules:
 - The URL must be an HTTP server URL, NOT a database connection URL
 - IGNORE these database ports entirely: 5432 (PostgreSQL), 3306 (MySQL), 27017 (MongoDB), 6379 (Redis), 5433, 1433
 - The URL must start with http:// and use a port that an HTTP server listens on
+- If the repo has both an API/backend port and a frontend/client dev server port, choose the FRONTEND/CLIENT URL that a browser user should open
 - For monorepos, use the workspace command that starts the web server / frontend
 - Prefer "dev" script over "start"
 - Common HTTP ports: 3000 (Node/Next/Rails), 4000 (GraphQL), 5173 (Vite), 8000 (Django/FastAPI), 8080 (Java/Go), 3001 (fallback)
 - If a listen() call shows a specific port, use that
+- If Vite or a frontend dev server is present, strongly prefer its port for the URL, especially 5173 unless evidence shows another frontend port
 
 Respond in EXACTLY this format (two lines, nothing else):
 START_COMMAND: <full shell command>
@@ -168,6 +240,7 @@ URL: http://localhost:<port>`;
   // Strip trailing slash and validate it's not a DB port
   let url = urlMatch?.[1]?.trim().replace(/\/$/, '') ?? 'http://localhost:3000';
   url = sanitizeHttpUrl(url);
+  url = preferFrontendUrl(url, frontendEvidence, log);
 
   log(`Start command: ${startCommand}`);
   log(`URL: ${url}`);
@@ -215,6 +288,26 @@ function sanitizeHttpUrl(url: string): string {
     }
   } catch { /* ignore */ }
   return url;
+}
+
+function preferFrontendUrl(
+  url: string,
+  frontendEvidence: { hasFrontend: boolean; preferredPort?: string },
+  log: (msg: string) => void,
+): string {
+  if (!frontendEvidence.hasFrontend || !frontendEvidence.preferredPort) return url;
+
+  try {
+    const current = new URL(url);
+    if (current.port === frontendEvidence.preferredPort) return url;
+
+    const preferred = new URL(url);
+    preferred.port = frontendEvidence.preferredPort;
+    log(`Frontend UI detected; preferring client URL ${preferred.toString().replace(/\/$/, '')} over ${url}`);
+    return preferred.toString().replace(/\/$/, '');
+  } catch {
+    return url;
+  }
 }
 
 // ─── Environment Setup ────────────────────────────────────────────────────────

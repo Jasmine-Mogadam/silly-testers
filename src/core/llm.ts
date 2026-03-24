@@ -4,6 +4,15 @@ export interface CompletionOptions {
   temperature?: number;
   maxTokens?: number;
   system?: string;
+  onRetryUpdate?: (event: RetryUpdate) => void;
+}
+
+export interface RetryUpdate {
+  state: 'retrying' | 'failed' | 'succeeded';
+  attempt: number;
+  total: number;
+  operation: string;
+  details: string;
 }
 
 export class OllamaClient {
@@ -36,7 +45,7 @@ export class OllamaClient {
       };
     }
 
-    return this.request('/api/generate', body);
+    return this.request('/api/generate', body, 'text completion', opts.onRetryUpdate);
   }
 
   /**
@@ -50,7 +59,7 @@ export class OllamaClient {
       stream: false,
     };
 
-    return this.request('/api/generate', body);
+    return this.request('/api/generate', body, 'vision completion', opts.onRetryUpdate);
   }
 
   /**
@@ -78,14 +87,26 @@ export class OllamaClient {
     }
   }
 
-  private async request(path: string, body: Record<string, unknown>): Promise<string> {
+  private async request(
+    path: string,
+    body: Record<string, unknown>,
+    operation: string,
+    onRetryUpdate?: (event: RetryUpdate) => void,
+  ): Promise<string> {
     const url = `${this.endpoint}${path}`;
     let lastError: Error | undefined;
+    let lastFailureDetails = '';
 
     for (let attempt = 0; attempt < 3; attempt++) {
+      const startedAt = Date.now();
+      let timedOut = false;
+
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        const timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, this.timeoutMs);
 
         const res = await fetch(url, {
           method: 'POST',
@@ -102,16 +123,94 @@ export class OllamaClient {
         }
 
         const data = (await res.json()) as { response: string };
+        if (attempt > 0) {
+          onRetryUpdate?.({
+            state: 'succeeded',
+            attempt: attempt + 1,
+            total: 3,
+            operation,
+            details: `Recovered after ${attempt + 1} attempts. operation=${operation}, model=${String(body.model ?? 'unknown')}, endpoint=${path}, elapsed=${Date.now() - startedAt}ms`,
+          });
+        }
         return data.response.trim();
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        lastFailureDetails = this.describeFailure(lastError, {
+          operation,
+          path,
+          model: String(body.model ?? 'unknown'),
+          timeoutMs: this.timeoutMs,
+          elapsedMs: Date.now() - startedAt,
+          promptPreview: this.buildPromptPreview(body),
+          imageCount: Array.isArray(body.images) ? body.images.length : 0,
+          timedOut,
+        });
+
+        if (attempt < 2) {
+          onRetryUpdate?.({
+            state: 'retrying',
+            attempt: attempt + 2,
+            total: 3,
+            operation,
+            details: lastFailureDetails,
+          });
+        } else {
+          onRetryUpdate?.({
+            state: 'failed',
+            attempt: 3,
+            total: 3,
+            operation,
+            details: lastFailureDetails,
+          });
+        }
+
         if (attempt < 2) {
           await sleep(1_000 * (attempt + 1));
         }
       }
     }
 
-    throw new Error(`Ollama request failed after 3 attempts: ${lastError?.message}`);
+    throw new Error(`Ollama request failed after 3 attempts. ${lastFailureDetails || lastError?.message}`);
+  }
+
+  private buildPromptPreview(body: Record<string, unknown>): string {
+    const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+    return prompt
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 160);
+  }
+
+  private describeFailure(
+    error: Error,
+    context: {
+      operation: string;
+      path: string;
+      model: string;
+      timeoutMs: number;
+      elapsedMs: number;
+      promptPreview: string;
+      imageCount: number;
+      timedOut: boolean;
+    },
+  ): string {
+    const errorName = error.name || 'Error';
+    const reason = context.timedOut
+      ? `request timed out after ${context.timeoutMs}ms`
+      : `${errorName}: ${error.message}`;
+    const promptDetail = context.promptPreview
+      ? `prompt="${context.promptPreview}"`
+      : 'prompt=<empty>';
+    const imageDetail = context.imageCount > 0 ? `, images=${context.imageCount}` : '';
+
+    return [
+      `operation=${context.operation}`,
+      `model=${context.model}`,
+      `endpoint=${context.path}`,
+      `elapsed=${context.elapsedMs}ms`,
+      `reason=${reason}`,
+      `${promptDetail}${imageDetail}`,
+    ].join(', ');
   }
 }
 

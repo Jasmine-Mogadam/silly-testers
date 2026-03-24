@@ -237,6 +237,11 @@
   .pp-team-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 7px; }
   .dm-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
   .dm-team-badge { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; flex-shrink: 0; }
+  .log-retry-pill { margin-left: 8px; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; background: rgba(250,166,26,0.18); color: var(--yellow); }
+  .log-retry-pill.failed { background: rgba(237,66,69,0.18); color: var(--red); }
+  .log-retry-pill.succeeded { background: rgba(59,165,92,0.18); color: var(--green); }
+  .log-attach-btn { margin-left: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: var(--text-bright); font-size: 11px; font-weight: 600; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  .log-attach-btn:hover { background: rgba(255,255,255,0.12); }
   .pp-graph-wrap { margin-top: 2px; padding: 8px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }
   .pp-graph-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
   .pp-graph-title { font-size: 11px; font-weight: 700; color: var(--text-bright); }
@@ -487,11 +492,13 @@ function addSystemMessage(payload) {
 }
 
 function addAgentLog(data) {
-  // data: { agentId, id, line, fullText?, summarizing?, timestamp }
-  const { agentId, id, line, fullText, summarizing, timestamp } = data;
-  const entry = { id, line, fullText, summarizing, timestamp };
+  // data: { agentId, id, line, fullText?, summarizing?, retryCurrent?, retryTotal?, retryState?, timestamp }
+  const { agentId, id, line, fullText, summarizing, retryCurrent, retryTotal, retryState, timestamp } = data;
+  const entry = { id, line, fullText, summarizing, retryCurrent, retryTotal, retryState, timestamp };
   state.dms[agentId] = state.dms[agentId] || [];
-  state.dms[agentId].push(entry);
+  const existingIdx = state.dms[agentId].findIndex(e => e.id === id);
+  if (existingIdx >= 0) state.dms[agentId][existingIdx] = { ...state.dms[agentId][existingIdx], ...entry };
+  else state.dms[agentId].push(entry);
   state.agentLastLog[agentId] = timestamp || Date.now();
 
   const isActive = state.activeView === 'dm' && state.activeDm === agentId;
@@ -511,10 +518,7 @@ function applyLogSummary(data) {
   if (reg) {
     reg.entry.line = summary;
     reg.entry.summarizing = false;
-    const textEl = reg.el.querySelector('.log-text');
-    if (textEl) textEl.textContent = summary;
-    const spinEl = reg.el.querySelector('.log-summarizing');
-    if (spinEl) spinEl.remove();
+    updateLogLineElement(reg.el, reg.entry);
   }
 }
 
@@ -536,6 +540,7 @@ function renderCurrentView() {
   } else if (state.activeView === 'dm' && state.activeDm) {
     dmView.style.display = 'block';
     dmView.innerHTML = '';
+    Object.keys(logEntries).forEach(id => { delete logEntries[id]; });
     (state.dms[state.activeDm] || []).forEach(e => appendLogLine(state.activeDm, e));
     updateDmHeader();
     scrollToBottom('dm-view');
@@ -664,29 +669,46 @@ function looksLikeDiff(text) {
 }
 
 function appendLogLine(agentId, entry) {
-  // entry: { id, line, fullText?, summarizing?, timestamp }
   const container = document.getElementById('dm-view');
-  const { key, icon } = detectLogType(entry.line);
+  const existing = logEntries[entry.id];
+  if (existing && existing.el.isConnected) {
+    existing.entry = { ...existing.entry, ...entry };
+    updateLogLineElement(existing.el, existing.entry);
+    return;
+  }
 
   const div = document.createElement('div');
-  div.className = `log-line log-${key}`;
   div.dataset.logId = entry.id;
-  div.title = 'Click to expand';
+  div.addEventListener('click', () => openLogDetail(logEntries[entry.id]?.entry || entry));
+  container.appendChild(div);
+  logEntries[entry.id] = { el: div, entry };
+  updateLogLineElement(div, entry);
+}
 
+function updateLogLineElement(div, entry) {
+  const { key, icon } = detectLogType(entry.line);
   const hasAttachment = !!entry.fullText;
+  const retryPill = entry.retryCurrent && entry.retryTotal
+    ? `<span class="log-retry-pill ${escHtml(entry.retryState || 'retrying')}">${escHtml(`${entry.retryCurrent}/${entry.retryTotal}`)}</span>`
+    : '';
 
+  div.className = `log-line log-${key}`;
+  div.title = hasAttachment ? 'Click to expand details' : 'Click to expand';
   div.innerHTML =
     `<span class="log-time">${formatTime(entry.timestamp)}</span>` +
     (icon ? `<span class="log-icon">${icon}</span>` : '') +
     `<span class="log-text">${escHtml(entry.line)}</span>` +
+    retryPill +
     (entry.summarizing ? `<span class="log-summarizing">summarizing…</span>` : '') +
-    (hasAttachment ? `<span class="log-attach">📄 full log</span>` : '');
+    (hasAttachment ? `<button type="button" class="log-attach-btn">Log</button>` : '');
 
-  div.addEventListener('click', () => openLogDetail(entry));
-  container.appendChild(div);
-
-  // Register for live summary updates
-  logEntries[entry.id] = { el: div, entry };
+  const btn = div.querySelector('.log-attach-btn');
+  if (btn) {
+    btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openLogDetail(entry);
+    });
+  }
 }
 
 // ── Log detail modal ──────────────────────────────────────────────────────────

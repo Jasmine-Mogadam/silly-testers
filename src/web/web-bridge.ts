@@ -30,6 +30,9 @@ export interface DmEntry {
   fullText?: string;
   /** True while the LLM is generating a summary */
   summarizing?: boolean;
+  retryCurrent?: number;
+  retryTotal?: number;
+  retryState?: 'retrying' | 'failed' | 'succeeded';
   timestamp: number;
 }
 
@@ -46,7 +49,18 @@ export type WebBridgeEvent =
   | { type: 'channel_message'; channel: string; message: WebChannelMessage }
   | { type: 'channel_message_summary'; channel: string; id: string; summary: string }
   | { type: 'system_message'; payload: SystemMessageEnvelope }
-  | { type: 'agent_log'; agentId: string; id: string; line: string; fullText?: string; summarizing?: boolean; timestamp: number }
+  | {
+      type: 'agent_log';
+      agentId: string;
+      id: string;
+      line: string;
+      fullText?: string;
+      summarizing?: boolean;
+      retryCurrent?: number;
+      retryTotal?: number;
+      retryState?: 'retrying' | 'failed' | 'succeeded';
+      timestamp: number;
+    }
   | { type: 'agent_log_summary'; agentId: string; id: string; summary: string }
   | { type: 'report_filed'; card: ReportCard }
   | { type: 'agent_registered'; agent: BotIdentity };
@@ -176,38 +190,63 @@ export class WebBridge extends EventEmitter {
     return identity;
   }
 
-  agentLog(agentId: string, line: string): void {
+  agentLog(
+    agentId: string,
+    line: string,
+    options: {
+      id?: string;
+      fullText?: string;
+      summarizing?: boolean;
+      timestamp?: number;
+      retryCurrent?: number;
+      retryTotal?: number;
+      retryState?: 'retrying' | 'failed' | 'succeeded';
+    } = {},
+  ): string {
     this.ensureIdentity(agentId);
     if (!this.dmHistory[agentId]) this.dmHistory[agentId] = [];
 
-    const id = randomUUID();
-    const timestamp = Date.now();
-    const isLong = line.length > LONG_MSG_THRESHOLD;
+    const id = options.id ?? randomUUID();
+    const timestamp = options.timestamp ?? Date.now();
+    const existing = this.dmHistory[agentId].find((entry) => entry.id === id);
+    const sourceText = options.fullText ?? line;
+    const isLong = sourceText.length > LONG_MSG_THRESHOLD;
+    const displayLine = line.length > LONG_MSG_THRESHOLD ? `${line.slice(0, 280)}…` : line;
 
     const entry: DmEntry = {
       id,
-      line: isLong ? line.slice(0, 280) + '…' : line,
-      fullText: isLong ? line : undefined,
-      summarizing: isLong && this.llm !== null,
+      line: displayLine,
+      fullText: options.fullText ?? (isLong ? sourceText : undefined),
+      summarizing: options.summarizing ?? (isLong && this.llm !== null),
+      retryCurrent: options.retryCurrent,
+      retryTotal: options.retryTotal,
+      retryState: options.retryState,
       timestamp,
     };
 
-    this.dmHistory[agentId].push(entry);
-    if (this.dmHistory[agentId].length > DM_HISTORY_LIMIT) {
-      this.dmHistory[agentId].shift();
+    if (existing) {
+      Object.assign(existing, entry);
+    } else {
+      this.dmHistory[agentId].push(entry);
+      if (this.dmHistory[agentId].length > DM_HISTORY_LIMIT) {
+        this.dmHistory[agentId].shift();
+      }
     }
 
     this.emit('event', {
       type: 'agent_log',
       agentId,
-      id: entry.id,
+      id,
       line: entry.line,
       fullText: entry.fullText,
       summarizing: entry.summarizing,
+      retryCurrent: entry.retryCurrent,
+      retryTotal: entry.retryTotal,
+      retryState: entry.retryState,
       timestamp,
     } satisfies WebBridgeEvent);
 
-    if (isLong && this.llm) {
+    if (!existing && isLong && this.llm) {
       const capturedLlm = this.llm;
       capturedLlm.complete(
         `Summarize this AI agent action log in 1-2 concise sentences. Focus on what the agent did or discovered:\n\n${line.slice(0, 3000)}`
@@ -223,6 +262,8 @@ export class WebBridge extends EventEmitter {
         if (stored) stored.summarizing = false;
       });
     }
+
+    return id;
   }
 
   reportFiled(finding: Finding, filePath: string): void {
