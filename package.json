@@ -7,6 +7,7 @@
     "setup": "node scripts/setup.mjs",
     "setup:models": "ollama pull llama3.1:8b && ollama pull llava",
     "start": "ts-node src/index.ts",
+    "down": "ts-node src/index.ts down",
     "build": "tsc",
     "dev": "ts-node src/index.ts"
   },

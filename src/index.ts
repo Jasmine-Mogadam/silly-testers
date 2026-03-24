@@ -20,8 +20,9 @@ program
     'Which team to run: qa | red | both',
     'both'
   )
+  .option('--clean', 'Remove reusable working copy and docker-compose resources before starting', false)
   .option('--dry-run', 'Validate config and connectivity without starting agents', false)
-  .action(async (opts: { config: string; team: string; dryRun: boolean }) => {
+  .action(async (opts: { config: string; team: string; dryRun: boolean; clean: boolean }) => {
     const configPath = path.resolve(opts.config);
 
     let config;
@@ -38,13 +39,38 @@ program
       process.exit(1);
     }
 
-    const runner = new Runner(config, { configPath, team, dryRun: opts.dryRun });
+    const runner = new Runner(config, { configPath, team, dryRun: opts.dryRun, clean: opts.clean });
 
     try {
       await runner.run();
     } catch (err) {
       console.error(`\nFatal error: ${(err as Error).message}`);
       await runner.cleanup().catch(() => {});
+      process.exit(1);
+    }
+  });
+
+program
+  .command('down')
+  .description('Remove reusable working copy and any docker-compose resources created for the target app')
+  .option('-c, --config <path>', 'Path to config.yaml', './config.yaml')
+  .action(async (opts: { config: string }) => {
+    const configPath = path.resolve(opts.config);
+
+    let config;
+    try {
+      config = loadConfig(configPath);
+    } catch (err) {
+      console.error(`\nConfiguration error:\n${(err as Error).message}\n`);
+      process.exit(1);
+    }
+
+    const runner = new Runner(config, { configPath, team: 'both', dryRun: false, clean: false });
+
+    try {
+      await runner.down();
+    } catch (err) {
+      console.error(`\nCleanup error: ${(err as Error).message}`);
       process.exit(1);
     }
   });

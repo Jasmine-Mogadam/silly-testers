@@ -79,15 +79,21 @@ npm start -- --dry-run
 # Run both QA and Red Team (default)
 npm start
 
+# Reset the reusable working copy + docker-compose stack before starting
+npm start -- --clean
+
 # Run only one team
 npm start -- --team qa
 npm start -- --team red
 
 # Use a different config file
 npm start -- --config /path/to/other-config.yaml
+
+# Tear down any reusable docker-compose resources without starting a run
+npm run down
 ```
 
-Stop with **Ctrl+C** — agents shut down gracefully and a summary is printed.
+Stop with **Ctrl+C** — agents shut down gracefully and a summary is printed. If the target app uses Docker Compose, the same compose project is reused on the next run instead of creating a fresh stack each time.
 
 ---
 

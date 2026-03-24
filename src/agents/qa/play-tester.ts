@@ -142,7 +142,11 @@ Respond with ONE action only.`;
     } else if (action.startsWith('TYPE:')) {
       const parts = action.slice(5).split('|');
       if (parts.length >= 2) {
-        await this.page.fill(parts[0].trim(), parts[1].trim()).catch(() => {});
+        const selector = parts[0].trim();
+        const text = parts[1].trim();
+        await this.page.fill(selector, text).catch(() => {
+          this.logPageInteraction('TYPE failed', `selector=${selector} text=${JSON.stringify(text)}`);
+        });
       }
 
     } else if (action.startsWith('STORE_NOTE:')) {
@@ -195,7 +199,7 @@ Respond with ONE action only.`;
         .or(this.page.locator(`text=${description}`));
       await locator.first().click({ timeout: 5_000 });
     } catch {
-      this.log(`Fuzzy click failed: ${description}`);
+      this.logPageInteraction('Fuzzy click failed', description);
     }
   }
 

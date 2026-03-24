@@ -21,6 +21,7 @@ export interface RunnerOptions {
   configPath: string;
   team: 'qa' | 'red' | 'both';
   dryRun: boolean;
+  clean: boolean;
 }
 
 export class Runner {
@@ -37,10 +38,14 @@ export class Runner {
   private activeCrashIncident: { announcedAt: number; recentOutput: string } | null = null;
   private systemChannel = SystemChannel.getInstance();
   private webServer: WebServer | null = null;
+  private readonly reusableWorkDir: string;
+  private readonly composeProjectName: string;
 
   constructor(config: Config, options: RunnerOptions) {
     this.config = config;
     this.options = options;
+    this.reusableWorkDir = resolveReusableWorkDir(config.target.repo);
+    this.composeProjectName = buildComposeProjectName(config.target.repo);
   }
 
   async run(): Promise<void> {
@@ -90,6 +95,11 @@ export class Runner {
     WebBridge.getInstanceIfExists()?.setLlmModel(config.ollama.textModel);
 
     // 2. Create a working copy of the repo — the original is NEVER modified
+    if (this.options.clean) {
+      console.log('[runner] --clean requested. Removing reusable working copy and Docker resources...');
+      await this.down();
+    }
+
     console.log('[runner] Creating working copy of repository...');
     this.workingDir = await this.prepareWorkingDirectory(config.target.repo);
     console.log(`[runner] Working copy ready: ${this.workingDir}`);
@@ -228,6 +238,10 @@ export class Runner {
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: true,
       detached: false,
+      env: {
+        ...process.env,
+        COMPOSE_PROJECT_NAME: this.composeProjectName,
+      },
     });
 
     const pushLine = (data: Buffer) => {
@@ -448,12 +462,6 @@ export class Runner {
     WebBridge.reset();
 
     if (this.workingDir) {
-      try {
-        fs.rmSync(this.workingDir, { recursive: true, force: true });
-        console.log('[runner] Working copy deleted.');
-      } catch (err) {
-        console.warn('[runner] Could not delete working copy:', err);
-      }
       this.workingDir = null;
     }
 
@@ -467,14 +475,13 @@ export class Runner {
    * Excludes node_modules, .git, and common build artifact directories.
    */
   private async prepareWorkingDirectory(originalRepo: string): Promise<string> {
-    const repoName = path.basename(originalRepo);
     const tmpBase = path.join(os.tmpdir(), 'silly-testers');
     fs.mkdirSync(tmpBase, { recursive: true });
-
-    // Use a timestamped dir so parallel runs don't collide
-    const workDir = path.join(tmpBase, `${repoName}-${Date.now()}`);
+    const workDir = this.reusableWorkDir;
 
     const EXCLUDED = new Set(['node_modules', '.git', 'dist', '.next', 'build', '__pycache__', '.cache', 'coverage', '.turbo']);
+
+    fs.rmSync(workDir, { recursive: true, force: true });
 
     fs.cpSync(originalRepo, workDir, {
       recursive: true,
@@ -496,6 +503,38 @@ export class Runner {
     return workDir;
   }
 
+  async down(): Promise<void> {
+    const composeDir = this.resolveComposeDirectory();
+    const composeFile = composeDir ? findComposeFile(composeDir) : null;
+
+    if (composeDir && composeFile) {
+      const relativeComposeFile = path.relative(composeDir, composeFile);
+      console.log(`[runner] Running docker compose down for project "${this.composeProjectName}"...`);
+      try {
+        execSync(`docker compose -f "${relativeComposeFile}" down --remove-orphans`, {
+          cwd: composeDir,
+          stdio: 'inherit',
+          env: {
+            ...process.env,
+            COMPOSE_PROJECT_NAME: this.composeProjectName,
+          },
+          timeout: 300_000,
+        });
+      } catch (err) {
+        console.warn('[runner] docker compose down failed:', (err as Error).message);
+      }
+    } else {
+      console.log('[runner] No docker compose file found in reusable working copy or target repo. Skipping docker cleanup.');
+    }
+
+    try {
+      fs.rmSync(this.reusableWorkDir, { recursive: true, force: true });
+      console.log('[runner] Reusable working copy deleted.');
+    } catch (err) {
+      console.warn('[runner] Could not delete reusable working copy:', err);
+    }
+  }
+
   private resolveReportDir(): string {
     return path.resolve(path.dirname(this.options.configPath), this.config.reports.outputDir);
   }
@@ -503,8 +542,50 @@ export class Runner {
   private resolveFeatureList(): string {
     return path.resolve(path.dirname(this.options.configPath), this.config.target.featureList);
   }
+
+  private resolveComposeDirectory(): string | null {
+    const candidates = [this.reusableWorkDir, this.config.target.repo];
+    for (const candidate of candidates) {
+      if (!candidate || !fs.existsSync(candidate)) continue;
+      if (findComposeFile(candidate)) return candidate;
+    }
+    return null;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function resolveReusableWorkDir(originalRepo: string): string {
+  const repoName = sanitizeName(path.basename(originalRepo));
+  const hash = shortHash(path.resolve(originalRepo));
+  return path.join(os.tmpdir(), 'silly-testers', `${repoName}-${hash}`);
+}
+
+function buildComposeProjectName(originalRepo: string): string {
+  const repoName = sanitizeName(path.basename(originalRepo));
+  const hash = shortHash(path.resolve(originalRepo));
+  return `silly-testers-${repoName}-${hash}`.slice(0, 63);
+}
+
+function sanitizeName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+}
+
+function shortHash(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function findComposeFile(dir: string): string | null {
+  for (const file of ['compose.yaml', 'compose.yml', 'docker-compose.yml', 'docker-compose.yaml']) {
+    const fullPath = path.join(dir, file);
+    if (fs.existsSync(fullPath)) return fullPath;
+  }
+  return null;
 }

@@ -156,7 +156,7 @@ Respond with one action per line.`;
           const selector = parts[0].trim();
           const text = parts[1].trim();
           await this.page.fill(selector, text).catch(() => {
-            this.log(`TYPE failed for selector: ${selector}`);
+            this.logPageInteraction('TYPE failed', `selector=${selector} text=${JSON.stringify(text)}`);
           });
         }
 
@@ -223,7 +223,7 @@ Respond with one action per line.`;
         .or(this.page.locator(`text=${description}`));
       await locator.first().click({ timeout: 5_000 });
     } catch {
-      this.log(`Could not click: ${description}`);
+      this.logPageInteraction('Could not click', description);
     }
   }
 

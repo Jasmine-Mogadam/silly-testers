@@ -52,7 +52,13 @@
   .sidebar-item .item-icon { font-size: 13px; opacity: 0.8; flex-shrink: 0; }
   .sidebar-item .item-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
   .sidebar-item .badge { min-width: 16px; height: 16px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 3px; flex-shrink: 0; }
+  .sidebar-thinking, .inline-thinking { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
   .avatar-sm { width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+  .thinking-dots { display: inline-flex; align-items: center; gap: 2px; }
+  .thinking-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--yellow); opacity: 0.35; animation: thinking-bounce 1s infinite ease-in-out; }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes thinking-bounce { 0%, 80%, 100% { opacity: 0.3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
 
   /* ── Main panel ── */
   #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -529,6 +535,7 @@ const state = {
   agents:       {},  // agentId → BotIdentity
   channels:     { qa: [], red: [], devops: [], system: [] },
   dms:          {},  // agentId → DmEntry[]
+  agentStates:  {},  // agentId → { thinking, updatedAt }
   reports:      [],
   meta:         { llmModel: 'unknown' },
   activeView:   'channel',
@@ -571,6 +578,7 @@ function handleMessage(data) {
     case 'system_message':    addSystemMessage(data.payload);               break;
     case 'agent_log':         addAgentLog(data);                            break;
     case 'agent_log_summary': applyLogSummary(data);                        break;
+    case 'agent_status':      updateAgentStatus(data);                      break;
     case 'report_filed':      addReport(data.card);                         break;
     case 'agent_registered':  registerAgent(data.agent);                    break;
   }
@@ -584,6 +592,7 @@ function applyInit(data) {
   });
   state.channels.system = data.channels.system || [];
   state.meta = data.meta || state.meta;
+  state.agentStates = data.agentStates || {};
   // dms are DmEntry[] from server
   Object.entries(data.dms || {}).forEach(([id, entries]) => {
     state.dms[id] = Array.isArray(entries) ? entries : [];
@@ -647,6 +656,15 @@ function addAgentLog(data) {
   const isActive = state.activeView === 'dm' && state.activeDm === agentId;
   if (isActive) { appendLogLine(agentId, entry); maybeScrollBottom('dm-view'); }
   else           { incrementUnread('dm:' + agentId); }
+}
+
+function updateAgentStatus(data) {
+  const { agentId, thinking, timestamp } = data;
+  state.agentStates[agentId] = { thinking, updatedAt: timestamp || Date.now() };
+  renderDmList();
+  if (state.activeView === 'dm' && state.activeDm === agentId) {
+    updateDmHeader();
+  }
 }
 
 function applyLogSummary(data) {
@@ -715,7 +733,10 @@ function updateDmHeader() {
   nameEl.innerHTML = renderAgentName(a.displayName || state.activeDm, state.activeDm);
   nameEl.classList.add('clickable');
   nameEl.onclick = (event) => showProfile(state.activeDm, event);
-  document.getElementById('ch-desc').textContent = state.activeDm;
+  const thinking = !!state.agentStates[state.activeDm]?.thinking;
+  document.getElementById('ch-desc').innerHTML = thinking
+    ? `${escHtml(state.activeDm)} <span class="inline-thinking"><span class="thinking-dots"><span></span><span></span><span></span></span>thinking</span>`
+    : escHtml(state.activeDm);
 }
 function updateReportsHeader() {
   const nameEl = document.getElementById('ch-name');
@@ -954,9 +975,11 @@ function renderDmList() {
     };
     const badge = state.unread['dm:' + agent.agentId];
     const teamBadge = renderTeamBadge(agentTeam(agent.agentId), 'dm-team-badge');
+    const thinking = !!state.agentStates[agent.agentId]?.thinking;
     item.innerHTML = `
       <div class="avatar-sm" style="background:${agent.color}">${escHtml(agent.emoji)}</div>
       <span class="dm-name-row"><span class="item-name" title="${escHtml(agent.agentId)}">${renderAgentName(agent.displayName, agent.agentId)}</span>${teamBadge}</span>
+      ${thinking ? `<span class="sidebar-thinking" title="Agent is waiting on the model"><span class="thinking-dots"><span></span><span></span><span></span></span>thinking</span>` : ''}
       ${badge ? `<span class="badge">${badge}</span>` : ''}`;
     list.appendChild(item);
   });
@@ -1118,11 +1141,11 @@ function renderPreview(data, containerEl, url) {
 
 // ── Profile popup ─────────────────────────────────────────────────────────────
 function getAgentStatus(agentId) {
+  if (state.agentStates[agentId]?.thinking) return 'thinking';
   const last = Math.max(state.agentLastLog[agentId]||0, state.agentLastMsg[agentId]||0);
   if (!last) return 'offline';
   const ago = Date.now() - last;
   if (ago < 12000)  return 'active';
-  if (ago < 90000)  return 'thinking';
   return 'offline';
 }
 function agentTeam(id) {
@@ -1175,7 +1198,12 @@ function showProfile(agentId, event) {
   popup.style.left = x+'px'; popup.style.top = y+'px';
 }
 function closeProfile() { document.getElementById('profile-popup').classList.remove('open'); profileAgentId=null; }
-function jumpToDmFromPopup() { if (profileAgentId) { closeProfile(); openDm(profileAgentId); } }
+function jumpToDmFromPopup() {
+  if (!profileAgentId) return;
+  const agentId = profileAgentId;
+  closeProfile();
+  openDm(agentId);
+}
 function timeAgo(ts) {
   const s = Math.floor((Date.now()-ts)/1000);
   if (s<10) return 'just now'; if (s<60) return `${s}s ago`;

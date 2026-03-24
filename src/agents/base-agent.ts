@@ -160,8 +160,7 @@ export abstract class BaseAgent {
   // ─── LLM ────────────────────────────────────────────────────────────────────
 
   protected async askLLM(prompt: string, system?: string): Promise<string> {
-    return this.withProgressHeartbeat(
-      'Waiting for text model response...',
+    return this.withThinkingState(
       () => {
         const onRetryUpdate = this.createRetryHandler();
         return this.llm.complete(prompt, {
@@ -169,20 +168,17 @@ export abstract class BaseAgent {
           onRetryUpdate,
         });
       },
-      'Text model response received.',
     );
   }
 
   protected async askVision(imageBase64: string, prompt: string): Promise<string> {
-    return this.withProgressHeartbeat(
-      'Waiting for vision model response...',
+    return this.withThinkingState(
       () => {
         const onRetryUpdate = this.createRetryHandler();
         return this.llm.vision(imageBase64, prompt, {
           onRetryUpdate,
         });
       },
-      'Vision model response received.',
     );
   }
 
@@ -434,6 +430,16 @@ export abstract class BaseAgent {
     this.teamChannel.post(this.id, caption, tags, imageBase64);
   }
 
+  protected currentPageForLog(): string {
+    const currentUrl = this.page.url().trim();
+    return currentUrl || '(no page loaded)';
+  }
+
+  protected logPageInteraction(action: string, detail: string, outcome?: string): void {
+    const suffix = outcome ? ` (${outcome})` : '';
+    this.log(`${action}: ${detail} [page=${this.currentPageForLog()}]${suffix}`);
+  }
+
   protected log(message: string): void {
     const prefix = `[${new Date().toISOString().slice(11, 19)}][${this.team}/${this.id}]`;
     console.log(`${prefix} ${message}`);
@@ -478,30 +484,18 @@ export abstract class BaseAgent {
     };
   }
 
-  private async withProgressHeartbeat<T>(
-    waitingMessage: string,
+  private async withThinkingState<T>(
     work: () => Promise<T>,
-    successMessage: string,
   ): Promise<T> {
-    this.log(waitingMessage);
-
-    let finished = false;
-    const interval = setInterval(() => {
-      if (!finished) {
-        this.log(waitingMessage);
-      }
-    }, 30_000);
+    const bridge = WebBridge.getInstanceIfExists();
+    bridge?.setAgentThinking(this.id, true);
 
     try {
-      const result = await work();
-      finished = true;
-      clearInterval(interval);
-      this.log(successMessage);
-      return result;
+      return await work();
     } catch (err) {
-      finished = true;
-      clearInterval(interval);
       throw err;
+    } finally {
+      bridge?.setAgentThinking(this.id, false);
     }
   }
 }

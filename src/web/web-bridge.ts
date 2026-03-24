@@ -36,6 +36,11 @@ export interface DmEntry {
   timestamp: number;
 }
 
+export interface AgentActivityState {
+  thinking: boolean;
+  updatedAt: number;
+}
+
 export interface WebChannelMessage extends ChannelMessage {
   /** UI-only summarized content for long messages */
   displayContent?: string;
@@ -62,6 +67,7 @@ export type WebBridgeEvent =
       timestamp: number;
     }
   | { type: 'agent_log_summary'; agentId: string; id: string; summary: string }
+  | { type: 'agent_status'; agentId: string; thinking: boolean; timestamp: number }
   | { type: 'report_filed'; card: ReportCard }
   | { type: 'agent_registered'; agent: BotIdentity };
 
@@ -75,6 +81,7 @@ export class WebBridge extends EventEmitter {
   private channelHistory: Record<string, WebChannelMessage[]> = { qa: [], red: [], devops: [] };
   private systemHistory: SystemMessageEnvelope[] = [];
   private dmHistory: Record<string, DmEntry[]> = {};
+  private agentStates: Record<string, AgentActivityState> = {};
   private reports: ReportCard[] = [];
   private filePathMap = new Map<string, string>();
   private unsubscribers: Array<() => void> = [];
@@ -266,6 +273,25 @@ export class WebBridge extends EventEmitter {
     return id;
   }
 
+  setAgentThinking(agentId: string, thinking: boolean): void {
+    this.ensureIdentity(agentId);
+    const existing = this.agentStates[agentId];
+    if (existing?.thinking === thinking) return;
+
+    const timestamp = Date.now();
+    this.agentStates[agentId] = {
+      thinking,
+      updatedAt: timestamp,
+    };
+
+    this.emit('event', {
+      type: 'agent_status',
+      agentId,
+      thinking,
+      timestamp,
+    } satisfies WebBridgeEvent);
+  }
+
   reportFiled(finding: Finding, filePath: string): void {
     const filename = filePath.split('/').pop() ?? filePath.split('\\').pop() ?? filePath;
     this.filePathMap.set(filename, filePath);
@@ -292,6 +318,7 @@ export class WebBridge extends EventEmitter {
       agents: Array.from(getIdentityMap().values()),
       channels: { ...this.channelHistory, system: this.systemHistory },
       dms: { ...this.dmHistory },
+      agentStates: { ...this.agentStates },
       reports: [...this.reports],
       meta: { llmModel: this.llmModel },
     };
