@@ -151,7 +151,7 @@ QA coordinator routine messages are intentionally sparse: it should only interru
 |---|---|
 | Red Coordinator | Tracks attack surface, prioritizes targets, avoids duplicate attempts |
 | Recon Agent | Reads source code for routes/auth/validation gaps, crawls the live site, then goes dormant until the team needs more discovery |
-| Exploit Agent | Attempts specific exploits (XSS, SQLi, IDOR, auth bypass, etc.) based on recon |
+| Exploit Agent | Attempts specific exploits (XSS, SQLi, IDOR, auth bypass, etc.) based on recon, with a sandboxed attack workbench for direct SUT requests and in-memory attack scripts |
 
 Red coordinator routine messages are also intentionally sparse: it should only speak when priority or de-confliction changes, otherwise it stays silent. Recon likewise avoids periodic "no-op" updates and only posts when it has net-new findings.
 
@@ -222,6 +222,18 @@ Once the server is running, all browser contexts are sandboxed — agents cannot
 - Tests only affect the target site
 - Exploit agents can't reach real external services
 - Results are reproducible
+
+Red-team exploit agents also get a small in-process attack workbench:
+
+- Direct `HTTP_REQUEST` actions for curl/Postman-style requests to the SUT
+- Saved in-memory attack scripts (`SAVE_SCRIPT` / `RUN_SCRIPT`) for multi-step probes
+- Script helpers like `request()`, `baseUrl`, `allowedOrigins`, and `sleep()`
+
+Those workbench tools are still sandboxed:
+
+- Every request is resolved against the discovered `allowedOrigins`
+- Redirects are followed only if they stay inside the same allowlist
+- Scripts do not get filesystem, shell, `process`, or arbitrary outbound network access
 
 ---
 

@@ -4,6 +4,13 @@ import type { OllamaClient, RetryUpdate } from '../core/llm';
 import type { TeamChannel, SystemChannel } from '../core/channel';
 import type { Reporter } from '../core/reporter';
 import type { RepoReader } from '../core/repo-reader';
+import {
+  AttackWorkbench,
+  type AttackRequestSpec,
+  type AttackResponseSummary,
+  type RunAttackScriptSpec,
+  type AttackScriptResult,
+} from '../core/attack-workbench';
 import type {
   ChannelMessage,
   Finding,
@@ -53,6 +60,7 @@ export abstract class BaseAgent {
   protected siteMap: SiteMap;
   protected page: Page;
   protected context: BrowserContext;
+  protected attackWorkbench: AttackWorkbench;
 
   protected status: AgentStatus = 'idle' as AgentStatus;
   private pausePromise: Promise<void> | null = null;
@@ -70,6 +78,7 @@ export abstract class BaseAgent {
     this.siteMap = deps.siteMap;
     this.page = deps.page;
     this.context = deps.context;
+    this.attackWorkbench = new AttackWorkbench(this.siteMap);
   }
 
   /** Subclasses implement their core behavior loop here. */
@@ -130,6 +139,22 @@ export abstract class BaseAgent {
       )
     );
     return hrefs.filter((h) => this.isAllowedUrl(h));
+  }
+
+  protected async sendHttpRequest(spec: AttackRequestSpec): Promise<AttackResponseSummary> {
+    return this.attackWorkbench.request(spec);
+  }
+
+  protected saveAttackScript(name: string, code: string): void {
+    this.attackWorkbench.saveScript(name, code);
+  }
+
+  protected listAttackScripts(): string[] {
+    return this.attackWorkbench.listScripts();
+  }
+
+  protected async runAttackScript(spec: RunAttackScriptSpec): Promise<AttackScriptResult> {
+    return this.attackWorkbench.runScript(spec);
   }
 
   // ─── LLM ────────────────────────────────────────────────────────────────────
